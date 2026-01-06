@@ -1,0 +1,19 @@
+-----------------------------------------------------------------------
+ CONFIGURAZIONE COMPLETATA
+-----------------------------------------------------------------------
+
+La tua console è accessibile su:
+http://console.{{ .Values.baseDomain }}
+
+CREDENZIALI AMMINISTRATORE (generate automaticamente):
+------------------------------------------------------
+Username: administrator
+Password: {{ (lookup "v1" "Secret" .Release.Namespace "minecraft-admin-secret").data.password | b64dec }}
+
+CONFIGURAZIONE DNS RICHIESTA:
+-----------------------------
+1. Crea un record A Wildcard (*.{{ .Values.baseDomain }}) che punta all'IP del LoadBalancer di Gate.
+2. Crea un record A per console.{{ .Values.baseDomain }} che punta all'IP dell'Ingress Controller (Nginx).
+
+Il controller Java è ora attivo e configurato con la variabile ADMINISTRATOR_PASSWORD.
+-----------------------------------------------------------------------
