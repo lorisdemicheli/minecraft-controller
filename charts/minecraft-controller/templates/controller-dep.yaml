@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft-controller-backend
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      app: minecraft-controller-backend
+  template:
+    metadata:
+      labels:
+        app: minecraft-controller-backend
+    spec:
+      serviceAccountName: {{ include "minecraft-controller.fullname" . }}-sa
+      containers:
+        - name: controller
+          image: {{ .Values.controller.image }}
+          env:
+            - name: ADMINISTRATOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minecraft-admin-secret
+                  key: password
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: BASE_DOMAIN
+              value: {{ include "minecraft-controller.baseDomain" . | quote }}
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minecraft-controller-svc
+spec:
+  selector:
+    app: minecraft-controller-backend
+  ports:
+    - port: 8080
+      targetPort: 8080

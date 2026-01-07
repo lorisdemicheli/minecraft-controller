@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft-console-frontend
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app: minecraft-console-frontend
+  template:
+    metadata:
+      labels:
+        app: minecraft-console-frontend
+    spec:
+      containers:
+        - name: react-app
+          image: {{ .Values.frontend.image }}
+          env:
+            - name: REACT_APP_API_URL
+              value: "http://api.{{ include "minecraft-controller.baseDomain" . }}"
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minecraft-console-svc
+spec:
+  selector:
+    app: minecraft-console-frontend
+  ports:
+    - port: 80
+      targetPort: 80

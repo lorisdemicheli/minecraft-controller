@@ -1,0 +1,18 @@
+-----------------------------------------------------------------------
+ DEPLOYMENT SUCCESSFUL
+-----------------------------------------------------------------------
+
+Web Console: http://console.{{ include "minecraft-controller.baseDomain" . }}
+Backend API: http://api.{{ include "minecraft-controller.baseDomain" . }}
+
+ADMIN CREDENTIALS:
+------------------
+Username: admin
+Password: {{ (lookup "v1" "Secret" .Release.Namespace "minecraft-admin-secret").data.password | b64dec }}
+
+DNS SETUP:
+----------
+1. Point *.{{ include "minecraft-controller.baseDomain" . }} to the Gate LoadBalancer IP (for Minecraft traffic).
+2. Point console.{{ include "minecraft-controller.baseDomain" . }} to the Nginx Ingress IP (for Web traffic).
+3. Point api.{{ include "minecraft-controller.baseDomain" . }} to the Nginx Ingress IP (for API traffic).
+-----------------------------------------------------------------------

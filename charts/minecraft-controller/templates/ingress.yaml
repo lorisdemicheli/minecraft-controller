@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minecraft-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+    # Route for the React Frontend
+    - host: console.{{ include "minecraft-controller.baseDomain" . }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minecraft-console-svc
+                port:
+                  number: 80
+    # Route for the Java Backend (API)
+    - host: api.{{ include "minecraft-controller.baseDomain" . }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minecraft-controller-svc
+                port:
+                  number: 8080

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: minecraft-controller
+description: Kubernetes controller for Minecraft server orchestration with UI and Gateway. (Controller Kubernetes per l'orchestrazione di server Minecraft con UI e Gateway.).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - minecraft
+  - kubernetes
+  - controller
+  - gateway
+  - minikube

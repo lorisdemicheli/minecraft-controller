@@ -1,0 +1,18 @@
+# [MANDATORY] Base domain for the platform (e.g., example.com)
+# The installation will fail if this is left empty.
+baseDomain: ""
+
+# Backend Configuration (Java Minecraft Controller)
+controller:
+  image: "lorisdemicheli/minecraft-controller:latest"
+  replicas: 1
+
+# Frontend Configuration (React Console)
+frontend:
+  image: "lorisdemicheli/minecraft-console:latest"
+  replicas: 1
+
+# Proxy Configuration (Gate Minecraft Proxy)
+gate:
+  image: "minekube/gate:latest"
+  replicas: 1

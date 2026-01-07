@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gate-proxy
+spec:
+  replicas: {{ .Values.gate.replicas }}
+  selector:
+    matchLabels:
+      app: gate-proxy
+  template:
+    metadata:
+      labels:
+        app: gate-proxy
+    spec:
+      serviceAccountName: {{ include "minecraft-controller.fullname" . }}-sa
+      containers:
+        - name: gate
+          image: {{ .Values.gate.image }}
+          args: ["--lite"]
+          env:
+            - name: GATE_LITE_SCAN_SELECTOR
+              value: "mc-server=active"
+          ports:
+            - containerPort: 25565
+              name: minecraft
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gate-ingress
+spec:
+  type: LoadBalancer
+  selector:
+    app: gate-proxy
+  ports:
+    - port: 25565
+      targetPort: 25565
+      name: minecraft
