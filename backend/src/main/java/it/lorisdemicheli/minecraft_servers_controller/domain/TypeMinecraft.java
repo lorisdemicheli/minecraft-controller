@@ -2,6 +2,7 @@ package it.lorisdemicheli.minecraft_servers_controller.domain;
 
 import java.util.Objects;
 import java.util.stream.Stream;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public interface TypeMinecraft {
 
@@ -21,6 +22,7 @@ public interface TypeMinecraft {
   
   public void setEula(boolean val);
   
+  @JsonIgnore
   public default boolean isValid() {
     return Stream.of(getVersion(), getModrinthProjectId(), getCurseforgePageUrl()) //
         .filter(Objects::nonNull) //

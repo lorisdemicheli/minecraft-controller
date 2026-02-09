@@ -16,7 +16,6 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ConfigurableOptions;
 import it.lorisdemicheli.minecraft_servers_controller.domain.Server;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInfo;
-import it.lorisdemicheli.minecraft_servers_controller.domain.Status;
 import it.lorisdemicheli.minecraft_servers_controller.domain.Type;
 import it.lorisdemicheli.minecraft_servers_controller.service.KubernetesServerInstanceService;
 import reactor.core.publisher.Flux;
@@ -55,14 +54,14 @@ public class ServerRestController {
     return ResponseEntity.ok(serverList); 
   }
 
-  @DeleteMapping(path = "/{id}")
+  @DeleteMapping(path = "/{serverName}")
   public ResponseEntity<Void> deleteServer(@PathVariable String serverName) {
     service.deleteServer(serverName);
     return ResponseEntity.noContent().build();
   }
 
 
-  @GetMapping(value = "/{instanceId}/info", produces = MediaType.APPLICATION_JSON_VALUE)
+  @GetMapping(value = "/{serverName}/info", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<ServerInfo> getServerInfo(@PathVariable String serverName) {
     ServerInfo info = service.getServerInfo(serverName);
     return ResponseEntity.ok(info);

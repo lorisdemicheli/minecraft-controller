@@ -16,7 +16,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kubernetes.client.Exec;
 import io.kubernetes.client.PodLogs;
 import io.kubernetes.client.custom.Quantity;
-import io.kubernetes.client.openapi.ApiClient;
 import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.AppsV1Api;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
@@ -65,7 +64,7 @@ public class KubernetesServerInstanceService {
   @Autowired
   private CoreV1Api coreApi;
   @Autowired
-  private ApiClient apiClient;
+  private Exec exec;
   @Autowired
   private AppsV1Api appsApi;
   @Autowired
@@ -369,7 +368,6 @@ public class KubernetesServerInstanceService {
     ServerInfo info = new ServerInfo();
 
     try {
-      // 1. Recupero lo StatefulSet per vedere le repliche desiderate
       V1StatefulSet sts = appsApi //
           .readNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
           .execute();
@@ -403,7 +401,6 @@ public class KubernetesServerInstanceService {
         return info;
       }
 
-      // 3. Se arriviamo qui, lo stato è STARTED -> eseguiamo mc-monitor
       info.setState(ServerState.STARTED);
       return fetchLiveMonitorData(info, serverName);
 
@@ -416,7 +413,6 @@ public class KubernetesServerInstanceService {
 
   private ServerInfo fetchLiveMonitorData(ServerInfo info, String serverName) {
     try {
-      Exec exec = new Exec(apiClient);
       String[] command =
           {"mc-monitor", "status", "--host", "localhost", "--port", "25565", "--json"};
 
@@ -476,7 +472,6 @@ public class KubernetesServerInstanceService {
   }
 
   public void sendCommand(String serverName, String command) {
-    Exec exec = new Exec(apiClient);
     try {
       // mc-send-to-console gestisce tutto l'input successivo come comando
       String[] cmd = {"mc-send-to-console", command};
@@ -505,6 +500,7 @@ public class KubernetesServerInstanceService {
     server.setVersion(labels.get(LABEL_SERVER_MINECRAFT_VERSION));
     server.setModrinthProjectId(labels.get(LABEL_SERVER_MODRINTH_PROJECT_ID));
     server.setCurseforgePageUrl(labels.get(LABEL_SERVER_CURSEFORGE_URL));
+    server.setEula(Boolean.valueOf(labels.get(LABEL_SERVER_MINECRAFT_EULA)));
 
     return server;
   }
