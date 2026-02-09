@@ -8,9 +8,9 @@ import lombok.Setter;
 @Getter
 @Setter
 @Configuration
-@ConfigurationProperties(prefix = "kubernetes")
-public class KubernetesOptions {
-
-  private String namespace = "default";
-
+@ConfigurationProperties(prefix = "minecraft")
+public class MinecraftServerOptions {
+  private String namespace = "minecraft-servers";
+  private String baseDomain = "tuodominio.it";
+  private String curseForgeApiKey; // Necessario per modpack CurseForge
 }

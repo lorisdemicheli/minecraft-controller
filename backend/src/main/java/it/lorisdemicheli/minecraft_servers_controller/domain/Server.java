@@ -9,14 +9,15 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class Server {
+public class Server implements TypeMinecraft {
 
-  private String id;
-  private Type type;
   private String name;
-  private String memory;
+  private Type type;
+  private double cpu;
+  private double memory;
+  private boolean eula;
+
   private String version;
-  private Integer modpackId;
-  private String modpackUrl;
-  private String modpackName;
+  private String modrinthProjectId;
+  private String curseforgePageUrl;
 }

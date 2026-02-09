@@ -1,8 +1,10 @@
 package it.lorisdemicheli.minecraft_servers_controller.controller;
 
+import java.net.URI;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,54 +12,88 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import it.lorisdemicheli.minecraft_servers_controller.domain.Power;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import it.lorisdemicheli.minecraft_servers_controller.domain.ConfigurableOptions;
 import it.lorisdemicheli.minecraft_servers_controller.domain.Server;
+import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInfo;
 import it.lorisdemicheli.minecraft_servers_controller.domain.Status;
+import it.lorisdemicheli.minecraft_servers_controller.domain.Type;
+import it.lorisdemicheli.minecraft_servers_controller.service.KubernetesServerInstanceService;
 import reactor.core.publisher.Flux;
 
 @RestController
-@RequestMapping("/servers")
+@RequestMapping("/server")
 public class ServerRestController {
 
+  @Autowired
+  private KubernetesServerInstanceService service;
 
-  @PostMapping(path = "", consumes = MediaType.APPLICATION_JSON_VALUE,
+  @PostMapping(path = "/create/{type}/{serverName}", consumes = MediaType.APPLICATION_JSON_VALUE,
       produces = MediaType.APPLICATION_JSON_VALUE)
-  public Server createServer(@RequestBody Server server) {
+  public ResponseEntity<Server> createServer(@PathVariable Type type,
+      @PathVariable String serverName, @RequestBody ConfigurableOptions options) {
+    Server serverCreated = service.createServer(serverName, type, options);
 
+    URI location = ServletUriComponentsBuilder //
+        .fromCurrentRequest() //
+        .path("/{serverName}") //
+        .buildAndExpand(serverCreated.getName()) //
+        .toUri();
+
+    return ResponseEntity.created(location).body(serverCreated);
   }
 
-  @GetMapping(path = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-  public Server findServer(@PathVariable Long id) {
-
+  @GetMapping(path = "/{serverName}", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<Server> getServer(@PathVariable String serverName) {
+    Server server = service.getServer(serverName);
+    return ResponseEntity.ok(server);
   }
 
   @GetMapping(path = "", produces = MediaType.APPLICATION_JSON_VALUE)
-  public List<Server> listServer() {
-
+  public ResponseEntity<List<Server>> listServer() {
+    List<Server> serverList = service.getServerList();
+    return ResponseEntity.ok(serverList); 
   }
 
   @DeleteMapping(path = "/{id}")
-  public Server deleteServer(@PathVariable Long id) {
-
+  public ResponseEntity<Void> deleteServer(@PathVariable String serverName) {
+    service.deleteServer(serverName);
+    return ResponseEntity.noContent().build();
   }
 
-  @GetMapping(value = "/{instanceId}/logs", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-  public Flux<ServerSentEvent<String>> logsV3(@PathVariable Long id) {
-    return service.log(id);
+
+  @GetMapping(value = "/{instanceId}/info", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<ServerInfo> getServerInfo(@PathVariable String serverName) {
+    ServerInfo info = service.getServerInfo(serverName);
+    return ResponseEntity.ok(info);
   }
-  
-  @GetMapping(value = "/{instanceId}/status", produces = MediaType.APPLICATION_JSON_VALUE)
-  public Status findServerStatus(@PathVariable Long id) {
-    return service.log(id);
+
+  @PostMapping(value = "/{serverName}/start")
+  public ResponseEntity<Void> startServer(@PathVariable String serverName) {
+    service.startServer(serverName);
+    return ResponseEntity.noContent().build();
   }
-  
-  @PostMapping(value = "/{instanceId}/power", produces = MediaType.APPLICATION_JSON_VALUE)
-  public Status setServerPower(@PathVariable Long id, @RequestBody Power power) {
-    return service.log(id);
+
+  @PostMapping(value = "/{serverName}/stop")
+  public ResponseEntity<Void> stopServer(@PathVariable String serverName) {
+    service.stopServer(serverName);
+    return ResponseEntity.noContent().build();
   }
-  
-  @PostMapping(value = "/{instanceId}/command", produces = MediaType.APPLICATION_JSON_VALUE)
-  public Status setServerPower(@PathVariable Long id, @RequestBody String command) {
-    return service.log(id);
+
+  @PostMapping(value = "/{serverName}/terminate")
+  public ResponseEntity<Void> terminateServer(@PathVariable String serverName) {
+    service.terminateServer(serverName);
+    return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping(value = "/{serverName}/execute-command", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<Void> executeCommand(@PathVariable String serverName, @RequestBody String command) {
+    service.sendCommand(serverName, command);
+    return ResponseEntity.noContent().build();
+  }
+
+  @GetMapping(value = "/{serverName}/logs", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+  public Flux<String> logs(@PathVariable String serverName) {
+    return service.logs(serverName);
   }
 }
