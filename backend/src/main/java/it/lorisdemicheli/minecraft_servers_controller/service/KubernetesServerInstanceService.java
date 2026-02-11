@@ -250,6 +250,9 @@ public class KubernetesServerInstanceService {
   }
 
   public Server updateServer(Server server) {
+    if(!serverExist(server.getName())) {
+      throw new ResourceNotFoundException();
+    }
     if (!server.isValid()) {
       throw new ConfigurationException(
           "Invalid configuration, set one of version, modrinthProjectId curseforgePageUrl");
@@ -521,8 +524,10 @@ public class KubernetesServerInstanceService {
   }
 
   public void sendCommand(String serverName, String command) {
+    if(!serverExist(serverName)) {
+      throw new ResourceNotFoundException();
+    }
     try {
-      // mc-send-to-console gestisce tutto l'input successivo come comando
       String cmd[] = {"gosu","minecraft","mc-send-to-console", command};
       // TODO cambiare container
       Process proc = exec.exec(serverOptions.getNamespace(), getPodName(serverName), cmd,
