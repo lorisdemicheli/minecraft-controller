@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ConfigurableOptions;
 import it.lorisdemicheli.minecraft_servers_controller.domain.Server;
@@ -33,10 +34,9 @@ public class ServerRestController {
       @PathVariable String serverName, @RequestBody ConfigurableOptions options) {
     Server serverCreated = service.createServer(serverName, type, options);
 
-    URI location = ServletUriComponentsBuilder //
-        .fromCurrentRequest() //
-        .path("/{serverName}") //
-        .buildAndExpand(serverCreated.getName()) //
+    URI location = MvcUriComponentsBuilder
+        .fromMethodName(ServerRestController.class, "getServer", serverCreated.getName()) //
+        .build() //
         .toUri();
 
     return ResponseEntity.created(location).body(serverCreated);
@@ -48,10 +48,10 @@ public class ServerRestController {
     return ResponseEntity.ok(server);
   }
 
-  @GetMapping(path = "", produces = MediaType.APPLICATION_JSON_VALUE)
+  @GetMapping(path = "/list", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<List<Server>> listServer() {
     List<Server> serverList = service.getServerList();
-    return ResponseEntity.ok(serverList); 
+    return ResponseEntity.ok(serverList);
   }
 
   @DeleteMapping(path = "/{serverName}")
@@ -86,7 +86,8 @@ public class ServerRestController {
   }
 
   @PostMapping(value = "/{serverName}/execute-command", produces = MediaType.APPLICATION_JSON_VALUE)
-  public ResponseEntity<Void> executeCommand(@PathVariable String serverName, @RequestBody String command) {
+  public ResponseEntity<Void> executeCommand(@PathVariable String serverName,
+      @RequestBody String command) {
     service.sendCommand(serverName, command);
     return ResponseEntity.noContent().build();
   }

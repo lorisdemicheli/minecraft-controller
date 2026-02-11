@@ -11,6 +11,6 @@ import lombok.Setter;
 @ConfigurationProperties(prefix = "minecraft")
 public class MinecraftServerOptions {
   private String namespace = "minecraft-servers";
-  private String baseDomain = "tuodominio.it";
+  private String baseDomain = "lorisdemicheli.it";
   private String curseForgeApiKey; // Necessario per modpack CurseForge
 }

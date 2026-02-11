@@ -1,6 +1,7 @@
 package it.lorisdemicheli.minecraft_servers_controller.domain;
 
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -25,7 +26,15 @@ public class ServerInfo {
   public static class Players {
     private int max;
     private int online;
-    private List<Object> sample;
+    @JsonProperty("Sample")
+    private List<Player> sample;
+  }
+  
+  @Getter
+  @Setter
+  private static class Player {
+    private String id;
+    private String name;
   }
 
   @Getter
@@ -38,5 +47,6 @@ public class ServerInfo {
     private boolean strikethrough;
     private boolean obfuscated;
     private String color;
+    private Object extra;
   }
 }
