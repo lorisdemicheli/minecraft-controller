@@ -3,12 +3,14 @@ package it.lorisdemicheli.minecraft_servers_controller.service;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import org.apache.commons.lang3.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -20,7 +22,6 @@ import io.kubernetes.client.custom.Quantity;
 import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.AppsV1Api;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
-import io.kubernetes.client.openapi.apis.CustomObjectsApi;
 import io.kubernetes.client.openapi.models.V1Container;
 import io.kubernetes.client.openapi.models.V1EnvVar;
 import io.kubernetes.client.openapi.models.V1ExecAction;
@@ -45,6 +46,7 @@ import io.kubernetes.client.openapi.models.V1VolumeMount;
 import io.kubernetes.client.openapi.models.V1VolumeResourceRequirements;
 import it.lorisdemicheli.minecraft_servers_controller.config.MinecraftServerOptions;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ConfigurableOptions;
+import it.lorisdemicheli.minecraft_servers_controller.domain.FileEntry;
 import it.lorisdemicheli.minecraft_servers_controller.domain.Server;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInfo;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInfo.Description;
@@ -75,10 +77,10 @@ public class KubernetesServerInstanceService {
   @Autowired
   private PodLogs podLogs;
   @Autowired
-  private CustomObjectsApi customObjectsApi;
+  private KubernetesFileSystemService kubernetesFileSystemService;
   @Autowired
   private MinecraftServerOptions serverOptions;
-  
+
   private final static String LABEL_PREFIX = "it.lorisdemicheli/";
 
   private final static String LABEL_SERVER_NAME = LABEL_PREFIX + "app";
@@ -88,8 +90,14 @@ public class KubernetesServerInstanceService {
 
   private final static String LABEL_SERVER_MINECRAFT_EULA = LABEL_PREFIX + "eula";
   private final static String LABEL_SERVER_MINECRAFT_VERSION = LABEL_PREFIX + "version";
-  private final static String LABEL_SERVER_MODRINTH_PROJECT_ID = LABEL_PREFIX + "modrinth-project-id";
+  private final static String LABEL_SERVER_MODRINTH_PROJECT_ID =
+      LABEL_PREFIX + "modrinth-project-id";
   private final static String LABEL_SERVER_CURSEFORGE_URL = LABEL_PREFIX + "curseforge-url";
+
+  private final static String LABEL_MANAGED_BY = "managed-by";
+  private final static String VALUE_MANAGED_BY = "minecraft-controller";
+
+  private final static String CONTAINER_NAME = "minecraft";
 
   private final Map<String, Flux<String>> activeStreams = new ConcurrentHashMap<>();
 
@@ -103,9 +111,11 @@ public class KubernetesServerInstanceService {
           "Invalid configuration, set one of version, modrinthProjectId curseforgePageUrl");
     }
 
-    // 1. Setup Labels
-    Map<String, String> labels = new HashMap<>();
-    labels.put(LABEL_SERVER_NAME, serverName);
+    Map<String, String> genericLabels = new HashMap<>();
+    genericLabels.put(LABEL_SERVER_NAME, serverName);
+    genericLabels.put(LABEL_MANAGED_BY, VALUE_MANAGED_BY);
+
+    Map<String, String> labels = new HashMap<>(genericLabels);
     labels.put(LABEL_SERVER_TYPE, type.toString().toUpperCase());
     labels.put(LABEL_SERVER_CPU, Double.toString(options.getCpu()));
     labels.put(LABEL_SERVER_MEMORY, Double.toString(options.getMemory()));
@@ -119,7 +129,6 @@ public class KubernetesServerInstanceService {
     if (options.getCurseforgePageUrl() != null) {
       labels.put(LABEL_SERVER_CURSEFORGE_URL, options.getCurseforgePageUrl());
     }
-    labels.put("managed-by", "minecraft-controller");
 
     int memMb = (int) Math.floor(options.getMemory() * 1000);
     String javaMemory = memMb + "M";
@@ -139,16 +148,11 @@ public class KubernetesServerInstanceService {
         .putRequestsItem("cpu", new Quantity(Double.toString(options.getCpu())))
         .putRequestsItem("memory", new Quantity(k8sMemory));
 
-    V1Probe healthProbe = new V1Probe()
-        .exec(new V1ExecAction().addCommandItem("mc-health"))
-        .initialDelaySeconds(60)
-        .periodSeconds(20);
+    V1Probe healthProbe = new V1Probe().exec(new V1ExecAction().addCommandItem("mc-health"))
+        .initialDelaySeconds(60).periodSeconds(20);
 
-    V1Probe startupProbe = new V1Probe()
-        .exec(new V1ExecAction().addCommandItem("mc-health"))
-        .initialDelaySeconds(30)
-        .periodSeconds(10)
-        .failureThreshold(60);
+    V1Probe startupProbe = new V1Probe().exec(new V1ExecAction().addCommandItem("mc-health"))
+        .initialDelaySeconds(30).periodSeconds(10).failureThreshold(60);
 
     Map<String, String> annotations = new HashMap<>();
     String externalDomain = String.format("%s.%s", serverName, serverOptions.getBaseDomain());
@@ -157,67 +161,71 @@ public class KubernetesServerInstanceService {
     V1Service service = new V1Service() //
         .metadata(new V1ObjectMeta() //
             .name(serverName) //
-            .labels(labels) //
+            .labels(genericLabels) //
             .annotations(annotations)) //
         .spec(new V1ServiceSpec() //
-            .selector(labels) //
+            .selector(genericLabels) //
             .addPortsItem(new V1ServicePort() //
                 .protocol("TCP") //
                 .port(25565) //
                 .targetPort(new IntOrString(25565))));
 
     // 6. Creazione StatefulSet
-    V1StatefulSet statefulSet = new V1StatefulSet()
-        .metadata(new V1ObjectMeta().name(serverName).labels(labels))
-        .spec(new V1StatefulSetSpec()
-            .serviceName(serverName)
+    V1StatefulSet statefulSet = new V1StatefulSet() //
+        .metadata(new V1ObjectMeta() //
+            .name(serverName) //
+            .labels(labels))
+        .spec(new V1StatefulSetSpec() //
+            .serviceName(serverName) //
             .replicas(0) //
-            .selector(new V1LabelSelector().matchLabels(labels))
-            .template(new V1PodTemplateSpec()
-                .metadata(new V1ObjectMeta().labels(labels))
-                .spec(new V1PodSpec()
-                    .addContainersItem(new V1Container()
-                        .name("minecraft")
-                        .image("itzg/minecraft-server")
-                        .env(envs)
-                        .resources(resources)
-                        .livenessProbe(healthProbe)
-                        .readinessProbe(healthProbe)
-                        .startupProbe(startupProbe)
-                        .addVolumeMountsItem(new V1VolumeMount()
-                            .name("data")
-                            .mountPath("/data"))
-                    )
-                    .addVolumesItem(new V1Volume()
+            .selector(new V1LabelSelector() //
+                .matchLabels(genericLabels))
+            .template(new V1PodTemplateSpec() //
+                .metadata(new V1ObjectMeta() //
+                    .labels(genericLabels))
+                .spec(new V1PodSpec() //
+                    .addContainersItem(new V1Container() //
+                        .name(CONTAINER_NAME) //
+                        .image("itzg/minecraft-server") //
+                        .env(envs) //
+                        .resources(resources) //
+                        .livenessProbe(healthProbe) //
+                        .readinessProbe(healthProbe) //
+                        .startupProbe(startupProbe) //
+                        .addVolumeMountsItem(new V1VolumeMount() //
+                            .name("data") //
+                            .mountPath("/data")))
+                    .addVolumesItem(new V1Volume() //
                         .name("data")
                         .persistentVolumeClaim(new V1PersistentVolumeClaimVolumeSource()
-                            .claimName(serverName + "-pvc")))
-                )));
+                            .claimName(serverName + "-pvc"))))));
 
     // 7. Creazione PVC
-    V1PersistentVolumeClaim pvc = new V1PersistentVolumeClaim()
-        .metadata(new V1ObjectMeta().name(serverName + "-pvc").labels(labels))
-        .spec(new V1PersistentVolumeClaimSpec()
-            .accessModes(Arrays.asList("ReadWriteOnce"))
-            .resources(new V1VolumeResourceRequirements()
+    V1PersistentVolumeClaim pvc = new V1PersistentVolumeClaim() //
+        .metadata(new V1ObjectMeta() //
+            .name(serverName + "-pvc") //
+            .labels(genericLabels)) //
+        .spec(new V1PersistentVolumeClaimSpec() //
+            .accessModes(Arrays.asList("ReadWriteOnce")) //
+            .resources(new V1VolumeResourceRequirements() //
                 .putRequestsItem("storage", new Quantity("10Gi"))));
 
     try {
       coreApi //
-        .createNamespacedPersistentVolumeClaim(serverOptions.getNamespace(), pvc) //
-        .execute();
+          .createNamespacedPersistentVolumeClaim(serverOptions.getNamespace(), pvc) //
+          .execute();
       coreApi //
-        .createNamespacedService(serverOptions.getNamespace(), service) //
-        .execute(); // <--- AGGIUNTO
+          .createNamespacedService(serverOptions.getNamespace(), service) //
+          .execute(); //
       V1StatefulSet createdSts = appsApi //
           .createNamespacedStatefulSet(serverOptions.getNamespace(), statefulSet) //
           .execute();
-      
+
       return transform(createdSts);
     } catch (ApiException e) {
       throw new ApiRuntimeException(e);
     }
-}
+  }
 
   public Server getServer(String serverName) {
     try {
@@ -238,7 +246,7 @@ public class KubernetesServerInstanceService {
     try {
       V1StatefulSetList list = appsApi //
           .listNamespacedStatefulSet(serverOptions.getNamespace()) //
-          .labelSelector("managed-by=minecraft-controller") //
+          .labelSelector(String.format("%s=%s", LABEL_MANAGED_BY, VALUE_MANAGED_BY)) //
           .execute();
 
       return list.getItems().stream() //
@@ -250,7 +258,7 @@ public class KubernetesServerInstanceService {
   }
 
   public Server updateServer(Server server) {
-    if(!serverExist(server.getName())) {
+    if (!serverExist(server.getName())) {
       throw new ResourceNotFoundException();
     }
     if (!server.isValid()) {
@@ -262,7 +270,11 @@ public class KubernetesServerInstanceService {
       V1StatefulSet existingSts = appsApi
           .readNamespacedStatefulSet(server.getName(), serverOptions.getNamespace()).execute();
 
-      Map<String, String> labels = new HashMap<>();
+      Map<String, String> genericLabels = new HashMap<>();
+      genericLabels.put(LABEL_SERVER_NAME, server.getName());
+      genericLabels.put(LABEL_MANAGED_BY, VALUE_MANAGED_BY);
+
+      Map<String, String> labels = new HashMap<>(genericLabels);
       labels.put(LABEL_SERVER_NAME, server.getName());
       labels.put(LABEL_SERVER_TYPE, server.getType().toString().toUpperCase());
       labels.put(LABEL_SERVER_CPU, Double.toString(server.getCpu()));
@@ -277,17 +289,16 @@ public class KubernetesServerInstanceService {
       if (server.getCurseforgePageUrl() != null) {
         labels.put(LABEL_SERVER_CURSEFORGE_URL, server.getCurseforgePageUrl());
       }
-      labels.put("managed-by", "minecraft-controller");
 
       existingSts.getMetadata().setLabels(labels);
-      existingSts.getSpec().getSelector().setMatchLabels(labels);
-      existingSts.getSpec().getTemplate().getMetadata().setLabels(labels);
+      existingSts.getSpec().getSelector().setMatchLabels(genericLabels);
+      existingSts.getSpec().getTemplate().getMetadata().setLabels(genericLabels);
 
       String memoryLimit = (int) Math.floor(server.getMemory() * 1000) + "Mi";
       List<V1EnvVar> envs = server.getType().createEnv(server, serverOptions);
 
-      envs.add((new V1EnvVar().name("EULA").value(Boolean.toString(server.isEula()))));
-      envs.add((new V1EnvVar().name("CREATE_CONSOLE_IN_PIPE").value("TRUE")));
+      envs.add(new V1EnvVar().name("EULA").value(Boolean.toString(server.isEula())));
+      envs.add(new V1EnvVar().name("CREATE_CONSOLE_IN_PIPE").value("TRUE"));
       envs.add(new V1EnvVar().name("MEMORY").value(memoryLimit));
 
       V1Container container = existingSts.getSpec().getTemplate().getSpec().getContainers().get(0);
@@ -321,20 +332,10 @@ public class KubernetesServerInstanceService {
       coreApi //
           .deleteNamespacedPersistentVolumeClaim(serverName + "-pvc", serverOptions.getNamespace()) //
           .execute();
-      
+
       coreApi //
-      .deleteNamespacedService(serverName, serverOptions.getNamespace()) //
-      .execute(); 
-
-
-      customObjectsApi //
-          .deleteNamespacedCustomObject( //
-              "traefik.io", //
-              "v1alpha1", //
-              serverOptions.getNamespace(), //
-              "ingressroutetcps", //
-              serverName //
-          ).execute();
+          .deleteNamespacedService(serverName, serverOptions.getNamespace()) //
+          .execute();
 
       return true;
     } catch (ApiException e) {
@@ -453,7 +454,7 @@ public class KubernetesServerInstanceService {
         return info;
       }
 
-      info.setState(ServerState.STARTED);
+      info.setState(ServerState.RUNNING);
       return fetchLiveMonitorData(info, serverName);
 
     } catch (ApiException e) {
@@ -463,13 +464,89 @@ public class KubernetesServerInstanceService {
     }
   }
 
+  public Flux<String> logs(String serverName) {
+    return activeStreams.computeIfAbsent(serverName, k -> Flux.<String>create(sink -> {
+      try (InputStream is = podLogs.streamNamespacedPodLog(serverOptions.getNamespace(),
+          getPodName(serverName), null)) {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+        String line;
+        while (!sink.isCancelled() && (line = reader.readLine()) != null) {
+          sink.next(line);
+        }
+        sink.complete();
+      } catch (Exception e) {
+        sink.error(e);
+      } finally {
+        activeStreams.remove(serverName);
+      }
+    }).subscribeOn(Schedulers.boundedElastic()) //
+        .publish() //
+        .refCount() //
+        .cache(10) //
+    );
+  }
+
+  public void sendCommand(String serverName, String command) {
+    if (!serverExist(serverName)) {
+      throw new ResourceNotFoundException();
+    }
+    try {
+      String cmd[] = {"gosu", "minecraft", "mc-send-to-console", command};
+      // TODO cambiare container
+      Process proc = exec //
+          .exec( //
+              serverOptions.getNamespace(), //
+              getPodName(serverName), //
+              cmd, //
+              CONTAINER_NAME, //
+              false, //
+              true);
+      proc.waitFor();
+    } catch (Exception e) {
+      throw new RuntimeException("Err exec", e);
+    }
+  }
+
+  public List<FileEntry> listFiles(String serverName, String path) {
+    try {
+      return kubernetesFileSystemService //
+          .listFiles( //
+              serverOptions.getNamespace(), //
+              getPodName(serverName), //
+              CONTAINER_NAME, //
+              Strings.CS.prependIfMissing(path, "."));
+    } catch (Exception e) {
+      throw new RuntimeException("Err exec", e);
+    }
+  }
+
+
+  public void downloadFile(String serverName, String path, OutputStream out) {
+    try {
+      kubernetesFileSystemService //
+          .downloadFile( //
+              serverOptions.getNamespace(), //
+              getPodName(serverName), //
+              CONTAINER_NAME, //
+              Strings.CS.prependIfMissing(path, ".")) //
+          .transferTo(out);
+    } catch (Exception e) {
+      throw new RuntimeException("Err exec", e);
+    }
+  }
+
   private ServerInfo fetchLiveMonitorData(ServerInfo info, String serverName) {
     try {
       String[] command =
           {"mc-monitor", "status", "--host", "localhost", "--port", "25565", "--json"};
 
-      Process proc = exec.exec(serverOptions.getNamespace(), getPodName(serverName), command,
-          "minecraft", false, false);
+      Process proc = exec.exec( //
+          serverOptions.getNamespace(), //
+          getPodName(serverName), //
+          command, //
+          CONTAINER_NAME, //
+          false, //
+          false);
 
       StringBuilder output = new StringBuilder();
       try (BufferedReader reader =
@@ -501,43 +578,6 @@ public class KubernetesServerInstanceService {
     return info;
   }
 
-  public Flux<String> logs(String serverName) {
-    return activeStreams.computeIfAbsent(serverName, k -> Flux.<String>create(sink -> {
-      try (InputStream is =
-          podLogs.streamNamespacedPodLog(serverOptions.getNamespace(), getPodName(serverName), null)) {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-        String line;
-        while (!sink.isCancelled() && (line = reader.readLine()) != null) {
-          sink.next(line);
-        }
-        sink.complete();
-      } catch (Exception e) {
-        sink.error(e);
-      } finally {
-        activeStreams.remove(serverName);
-      }
-    }).subscribeOn(Schedulers.boundedElastic()) //
-        .publish() //
-        .refCount() //
-        .cache(10) //
-    );
-  }
-
-  public void sendCommand(String serverName, String command) {
-    if(!serverExist(serverName)) {
-      throw new ResourceNotFoundException();
-    }
-    try {
-      String cmd[] = {"gosu","minecraft","mc-send-to-console", command};
-      // TODO cambiare container
-      Process proc = exec.exec(serverOptions.getNamespace(), getPodName(serverName), cmd,
-          "minecraft", false, true);
-      proc.waitFor();
-    } catch (Exception e) {
-      throw new RuntimeException("Err exec", e);
-    }
-  }
-
   private String getPodName(String serverName) {
     return serverName + "-0";
   }
@@ -561,7 +601,8 @@ public class KubernetesServerInstanceService {
 
   private boolean serverExist(String serverName) {
     try {
-      appsApi.readNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
+      appsApi //
+          .readNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
           .execute();
       return true;
     } catch (ApiException e) {

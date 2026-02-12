@@ -3,6 +3,7 @@ package it.lorisdemicheli.minecraft_servers_controller.controller;
 import java.net.URI;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -11,10 +12,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ConfigurableOptions;
+import it.lorisdemicheli.minecraft_servers_controller.domain.FileEntry;
 import it.lorisdemicheli.minecraft_servers_controller.domain.Server;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInfo;
 import it.lorisdemicheli.minecraft_servers_controller.domain.Type;
@@ -96,4 +99,70 @@ public class ServerRestController {
   public Flux<String> logs(@PathVariable String serverName) {
     return service.logs(serverName);
   }
+
+  @GetMapping(value = "/{serverName}/files", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<List<FileEntry>> listFiles(@PathVariable String serverName,
+      @RequestParam String path) {
+    var files = service.listFiles(serverName, path);
+    return ResponseEntity.ok(files);
+  }
+
+  @GetMapping(value = "/{serverName}/file/download",
+      produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+  public ResponseEntity<StreamingResponseBody> downloadFile(@PathVariable String serverName,
+      @RequestParam String path) {
+    String filename = path.substring(path.lastIndexOf("/") + 1);
+    return ResponseEntity.ok() //
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"") //
+        .contentType(MediaType.APPLICATION_OCTET_STREAM) //
+        .body((out) -> {
+          service.downloadFile(serverName, path, out);
+        });
+  }
+
+  // @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  // public ResponseEntity<Map<String, String>> uploadFile(@RequestParam("file") MultipartFile file,
+  // @RequestParam("destPath") String destPath) {
+  // try {
+  // // String fullPath = destPath.endsWith("/") ? destPath + file.getOriginalFilename() :
+  // // destPath;
+  //
+  // k8sService.uploadFile(NAMESPACE, POD_NAME, CONTAINER_NAME, destPath, file);
+  //
+  // return ResponseEntity.ok(Map.of("message", "Upload completato con successo: " + destPath));
+  // } catch (Exception e) {
+  // return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+  // }
+  // }
+  //
+  // // 4. CREA CARTELLA
+  // @PostMapping("/mkdir")
+  // public ResponseEntity<String> createDirectory(@RequestParam String path) {
+  // try {
+  // k8sService.createDirectory(NAMESPACE, POD_NAME, CONTAINER_NAME, path);
+  // return ResponseEntity.ok("Cartella creata");
+  // } catch (Exception e) {
+  // return ResponseEntity.status(500).body("Errore: " + e.getMessage());
+  // }
+  // }
+  //
+  // @DeleteMapping("/delete")
+  // public ResponseEntity<String> delete(@RequestParam String path) {
+  // try {
+  // k8sService.deletePath(NAMESPACE, POD_NAME, CONTAINER_NAME, path);
+  // return ResponseEntity.ok("Elemento eliminato");
+  // } catch (Exception e) {
+  // return ResponseEntity.status(500).body("Errore: " + e.getMessage());
+  // }
+  // }
+  //
+  // @PostMapping("/touch")
+  // public ResponseEntity<String> touch(@RequestParam String path) {
+  // try {
+  // k8sService.createEmptyFile(NAMESPACE, POD_NAME, CONTAINER_NAME, path);
+  // return ResponseEntity.ok("File creato");
+  // } catch (Exception e) {
+  // return ResponseEntity.status(500).body("Errore: " + e.getMessage());
+  // }
+  // }
 }
