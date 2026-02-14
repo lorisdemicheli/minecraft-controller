@@ -11,9 +11,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 import io.kubernetes.client.Copy;
 import io.kubernetes.client.Exec;
+import io.kubernetes.client.openapi.ApiException;
 import it.lorisdemicheli.minecraft_servers_controller.domain.FileEntry;
 
 @Service
@@ -25,13 +25,13 @@ public class KubernetesFileSystemService {
   private Copy copy;
 
   // LISTA FILE CON METADATI
-  public List<FileEntry> listFiles(String ns, String pod, String container, String path)
-      throws Exception {
+  public List<FileEntry> listFiles(String ns, String pod, String container, String path) throws IOException, InterruptedException, ApiException  {
     String cmd = String.format("stat -c '%%n|%%F|%%s|%%Y' %s/*", path);
     String output = executeCommand(ns, pod, container, new String[] {"sh", "-c", cmd});
 
-    if (output.isBlank())
+    if (output.isBlank()) {
       return List.of();
+    }
 
     List<FileEntry> entries = new ArrayList<>();
     for (String line : output.split("\n")) {
@@ -44,11 +44,11 @@ public class KubernetesFileSystemService {
   }
 
   public void uploadFile(String ns, String pod, String container, String remotePath,
-      MultipartFile file) throws Exception {
+      InputStream inputStream) throws IOException, ApiException  {
     Path tempFile = Files.createTempFile("k8s-up-", ".tmp");
     try {
-      try (InputStream is = file.getInputStream()) {
-        Files.copy(is, tempFile, StandardCopyOption.REPLACE_EXISTING);
+      try (inputStream) {
+        Files.copy(inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
       }
       copy.copyFileToPod(ns, pod, container, tempFile, Path.of(remotePath));
     } finally {
@@ -56,27 +56,24 @@ public class KubernetesFileSystemService {
     }
   }
 
-  public InputStream downloadFile(String ns, String pod, String container, String remotePath)
-      throws Exception {
+  public InputStream downloadFile(String ns, String pod, String container, String remotePath) throws ApiException, IOException {
     return copy.copyFileFromPod(ns, pod, container, remotePath);
   }
 
-  public void createDirectory(String ns, String pod, String container, String path)
-      throws Exception {
+  public void createDirectory(String ns, String pod, String container, String path) throws IOException, InterruptedException, ApiException {
     executeCommand(ns, pod, container, new String[] {"mkdir", "-p", path});
   }
 
-  public void deletePath(String ns, String pod, String container, String path) throws Exception {
+  public void deletePath(String ns, String pod, String container, String path) throws IOException, InterruptedException, ApiException  {
     executeCommand(ns, pod, container, new String[] {"rm", "-rf", path});
   }
 
-  public void touchFile(String ns, String pod, String container, String path) throws Exception {
+  public void touchFile(String ns, String pod, String container, String path) throws IOException, InterruptedException, ApiException {
     executeCommand(ns, pod, container, new String[] {"touch", path});
   }
 
   // ESECUZIONE COMANDI CON GESTIONE ROBUSTA DEGLI STREAM
-  private String executeCommand(String ns, String pod, String container, String[] command)
-      throws Exception {
+  private String executeCommand(String ns, String pod, String container, String[] command) throws IOException, InterruptedException, ApiException {
     Process proc = exec.exec(ns, pod, command, container, false, false);
 
     byte[] outBytes;

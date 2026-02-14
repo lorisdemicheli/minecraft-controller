@@ -1,6 +1,7 @@
 package it.lorisdemicheli.minecraft_servers_controller.service;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -11,7 +12,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.Strings;
+import org.apache.commons.lang3.function.FailableRunnable;
+import org.apache.commons.lang3.function.FailableSupplier;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -210,7 +214,7 @@ public class KubernetesServerInstanceService {
             .resources(new V1VolumeResourceRequirements() //
                 .putRequestsItem("storage", new Quantity("10Gi"))));
 
-    try {
+    return apiExceptionRetrieve(() -> {
       coreApi //
           .createNamespacedPersistentVolumeClaim(serverOptions.getNamespace(), pvc) //
           .execute();
@@ -222,28 +226,21 @@ public class KubernetesServerInstanceService {
           .execute();
 
       return transform(createdSts);
-    } catch (ApiException e) {
-      throw new ApiRuntimeException(e);
-    }
+    });
   }
 
   public Server getServer(String serverName) {
-    try {
+    return apiExceptionRetrieve(() -> {
       V1StatefulSet statefulSet =
           appsApi.readNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
               .execute();
 
       return transform(statefulSet);
-    } catch (ApiException e) {
-      if (e.getCode() == 404) {
-        throw new ResourceNotFoundException();
-      }
-      throw new ApiRuntimeException(e);
-    }
+    });
   }
 
   public List<Server> getServerList() {
-    try {
+    return apiExceptionRetrieve(() -> {
       V1StatefulSetList list = appsApi //
           .listNamespacedStatefulSet(serverOptions.getNamespace()) //
           .labelSelector(String.format("%s=%s", LABEL_MANAGED_BY, VALUE_MANAGED_BY)) //
@@ -252,21 +249,19 @@ public class KubernetesServerInstanceService {
       return list.getItems().stream() //
           .map(this::transform) //
           .toList();
-    } catch (ApiException e) {
-      throw new ApiRuntimeException(e);
-    }
+    });
   }
 
   public Server updateServer(Server server) {
     if (!serverExist(server.getName())) {
       throw new ResourceNotFoundException();
     }
-    if (!server.isValid()) {
+	if (!server.isValid()) {
       throw new ConfigurationException(
           "Invalid configuration, set one of version, modrinthProjectId curseforgePageUrl");
     }
 
-    try {
+    return apiExceptionRetrieve(() -> {
       V1StatefulSet existingSts = appsApi
           .readNamespacedStatefulSet(server.getName(), serverOptions.getNamespace()).execute();
 
@@ -315,16 +310,11 @@ public class KubernetesServerInstanceService {
           .execute();
 
       return transform(updatedSts);
-    } catch (ApiException e) {
-      if (e.getCode() == 404) {
-        throw new ResourceNotFoundException();
-      }
-      throw new ApiRuntimeException(e);
-    }
+    });
   }
 
   public boolean deleteServer(String serverName) {
-    try {
+    return apiExceptionRetrieve(() -> {
       appsApi //
           .deleteNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
           .execute();
@@ -338,16 +328,11 @@ public class KubernetesServerInstanceService {
           .execute();
 
       return true;
-    } catch (ApiException e) {
-      if (e.getCode() == 404) {
-        throw new ResourceNotFoundException();
-      }
-      throw new ApiRuntimeException(e);
-    }
+    });
   }
 
   public void startServer(String serverName) {
-    try {
+    apiExceptionRetrieve(() -> {
       V1StatefulSet statefulSet = appsApi //
           .readNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
           .execute();
@@ -360,16 +345,11 @@ public class KubernetesServerInstanceService {
               serverOptions.getNamespace(), //
               statefulSet) //
           .execute();
-    } catch (ApiException e) {
-      if (e.getCode() == 404) {
-        throw new ResourceNotFoundException();
-      }
-      throw new ApiRuntimeException(e);
-    }
+    });
   }
 
   public void stopServer(String serverName) {
-    try {
+    apiExceptionRetrieve(() -> {
       V1StatefulSet statefulSet = appsApi //
           .readNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
           .execute();
@@ -382,16 +362,11 @@ public class KubernetesServerInstanceService {
               serverOptions.getNamespace(), //
               statefulSet) //
           .execute();
-    } catch (ApiException e) {
-      if (e.getCode() == 404) {
-        throw new ResourceNotFoundException();
-      }
-      throw new ApiRuntimeException(e);
-    }
+    });
   }
 
   public void terminateServer(String serverName) {
-    try {
+    apiExceptionRetrieve(() -> {
       V1StatefulSet sts = appsApi //
           .readNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
           .execute();
@@ -407,20 +382,12 @@ public class KubernetesServerInstanceService {
           .gracePeriodSeconds(0) //
           .execute();
 
-    } catch (ApiException e) {
-      if (e.getCode() == 404) {
-        throw new ResourceNotFoundException();
-      }
-      if (e.getCode() != 404) {
-        throw new ApiRuntimeException(e);
-      }
-    }
+    });
   }
 
   public ServerInfo getServerInfo(String serverName) {
-    ServerInfo info = new ServerInfo();
-
-    try {
+    return apiExceptionRetrieve(() -> {
+      ServerInfo info = new ServerInfo();
       V1StatefulSet sts = appsApi //
           .readNamespacedStatefulSet(serverName, serverOptions.getNamespace()) //
           .execute();
@@ -456,12 +423,7 @@ public class KubernetesServerInstanceService {
 
       info.setState(ServerState.RUNNING);
       return fetchLiveMonitorData(info, serverName);
-
-    } catch (ApiException e) {
-      if (e.getCode() == 404)
-        throw new ResourceNotFoundException();
-      throw new ApiRuntimeException(e);
-    }
+    });
   }
 
   public Flux<String> logs(String serverName) {
@@ -487,10 +449,7 @@ public class KubernetesServerInstanceService {
   }
 
   public void sendCommand(String serverName, String command) {
-    if (!serverExist(serverName)) {
-      throw new ResourceNotFoundException();
-    }
-    try {
+    apiExceptionRetrieve(() -> {
       String cmd[] = {"gosu", "minecraft", "mc-send-to-console", command};
       // TODO cambiare container
       Process proc = exec //
@@ -502,27 +461,23 @@ public class KubernetesServerInstanceService {
               false, //
               true);
       proc.waitFor();
-    } catch (Exception e) {
-      throw new RuntimeException("Err exec", e);
-    }
+    });
   }
 
   public List<FileEntry> listFiles(String serverName, String path) {
-    try {
+    return apiExceptionRetrieve(() -> {
       return kubernetesFileSystemService //
           .listFiles( //
               serverOptions.getNamespace(), //
               getPodName(serverName), //
               CONTAINER_NAME, //
               Strings.CS.prependIfMissing(path, "."));
-    } catch (Exception e) {
-      throw new RuntimeException("Err exec", e);
-    }
+    });
   }
 
 
   public void downloadFile(String serverName, String path, OutputStream out) {
-    try {
+    apiExceptionRetrieve(() -> {
       kubernetesFileSystemService //
           .downloadFile( //
               serverOptions.getNamespace(), //
@@ -530,51 +485,112 @@ public class KubernetesServerInstanceService {
               CONTAINER_NAME, //
               Strings.CS.prependIfMissing(path, ".")) //
           .transferTo(out);
+    });
+  }
+
+  public void uploadFile(String serverName, String destPath, Resource resource) {
+    apiExceptionRetrieve(() -> {
+      String fullPath = Strings.CS.appendIfMissing(destPath, "/", resource.getFilename());
+      kubernetesFileSystemService.uploadFile( //
+          serverOptions.getNamespace(), //
+          getPodName(serverName), //
+          CONTAINER_NAME, //
+          fullPath, //
+          resource.getInputStream());
+    });
+  }
+
+  public void createDirectory(String serverName, String path) {
+    apiExceptionRetrieve(() -> {
+      kubernetesFileSystemService.createDirectory( //
+          serverOptions.getNamespace(), //
+          getPodName(serverName), //
+          CONTAINER_NAME, //
+          path);
+    });
+  }
+
+  public void deletePath(String serverName, String path) {
+    apiExceptionRetrieve(() -> {
+      kubernetesFileSystemService.deletePath( //
+          serverOptions.getNamespace(), //
+          getPodName(serverName), //
+          CONTAINER_NAME, //
+          path);
+    });
+  }
+  
+  public void createEmptyFile(String serverName, String path) {
+    apiExceptionRetrieve(() -> {
+      kubernetesFileSystemService.touchFile( //
+          serverOptions.getNamespace(), //
+          getPodName(serverName), //
+          CONTAINER_NAME, //
+          path);
+    });
+  }
+
+  private void apiExceptionRetrieve(FailableRunnable<Exception> action) {
+    try {
+      action.run();
+    } catch (ApiException e) {
+      if (e.getCode() == 404) {
+        throw new ResourceNotFoundException();
+      }
+      throw new ApiRuntimeException(e);
     } catch (Exception e) {
-      throw new RuntimeException("Err exec", e);
+      throw new RuntimeException("Errore imprevisto", e);
     }
   }
 
-  private ServerInfo fetchLiveMonitorData(ServerInfo info, String serverName) {
+  private <T> T apiExceptionRetrieve(FailableSupplier<T, Exception> action) {
     try {
-      String[] command =
-          {"mc-monitor", "status", "--host", "localhost", "--port", "25565", "--json"};
-
-      Process proc = exec.exec( //
-          serverOptions.getNamespace(), //
-          getPodName(serverName), //
-          command, //
-          CONTAINER_NAME, //
-          false, //
-          false);
-
-      StringBuilder output = new StringBuilder();
-      try (BufferedReader reader =
-          new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-        String line;
-        while ((line = reader.readLine()) != null) {
-          output.append(line);
-        }
+      return action.get();
+    } catch (ApiException e) {
+      if (e.getCode() == 404) {
+        throw new ResourceNotFoundException();
       }
-
-      proc.waitFor(5, TimeUnit.SECONDS);
-
-      if (proc.exitValue() == 0) {
-        JsonNode root = objectMapper.readTree(output.toString());
-
-        JsonNode serverInfo = root.get("server_info");
-
-        if (serverInfo != null && !serverInfo.isNull()) {
-          info.setVersion(objectMapper.treeToValue(serverInfo.get("version"), Version.class));
-          info.setPlayers(objectMapper.treeToValue(serverInfo.get("players"), Players.class));
-          info.setDescription(
-              objectMapper.treeToValue(serverInfo.get("description"), Description.class));
-        }
-      }
-      proc.destroy();
+      throw new ApiRuntimeException(e);
     } catch (Exception e) {
-      throw new ServerException(e);
+      throw new RuntimeException("Errore imprevisto", e);
     }
+  }
+
+  private ServerInfo fetchLiveMonitorData(ServerInfo info, String serverName)
+      throws InterruptedException, ApiException, IOException {
+    String[] command = {"mc-monitor", "status", "--host", "localhost", "--port", "25565", "--json"};
+
+    Process proc = exec.exec( //
+        serverOptions.getNamespace(), //
+        getPodName(serverName), //
+        command, //
+        CONTAINER_NAME, //
+        false, //
+        false);
+
+    StringBuilder output = new StringBuilder();
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        output.append(line);
+      }
+    }
+
+    proc.waitFor(5, TimeUnit.SECONDS);
+
+    if (proc.exitValue() == 0) {
+      JsonNode root = objectMapper.readTree(output.toString());
+
+      JsonNode serverInfo = root.get("server_info");
+
+      if (serverInfo != null && !serverInfo.isNull()) {
+        info.setVersion(objectMapper.treeToValue(serverInfo.get("version"), Version.class));
+        info.setPlayers(objectMapper.treeToValue(serverInfo.get("players"), Players.class));
+        info.setDescription(
+            objectMapper.treeToValue(serverInfo.get("description"), Description.class));
+      }
+    }
+    proc.destroy();
     return info;
   }
 
