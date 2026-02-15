@@ -1,19 +1,17 @@
 package it.lorisdemicheli.server_controller.config;
 
+import java.util.Optional;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
-import lombok.Getter;
-import lombok.Setter;
 
-@Getter
-@Setter
 @ConfigMapping(prefix = "it.lorisdemicheli.server-controller")
-public class ServerControllerConfig {
+public interface ServerControllerConfig {
 
   @WithDefault("minecraft-servers")
-  private String namespace;
+  public String getNamespace();
   @WithDefault("domainexample.it")
-  private String baseDomain;
-  private String curseForgeApiKey; // Necessario per modpack CurseForge
-  private String password;
+  public String getBaseDomain();
+  public Optional<String> getCurseForgeApiKey(); // Necessario per modpack CurseForge
+  @WithDefault("admin")
+  public String getPassword();
 }
