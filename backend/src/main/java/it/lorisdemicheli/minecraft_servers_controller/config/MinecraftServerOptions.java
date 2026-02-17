@@ -8,9 +8,10 @@ import lombok.Setter;
 @Getter
 @Setter
 @Configuration
-@ConfigurationProperties(prefix = "minecraft")
+@ConfigurationProperties(prefix = "it.lorisdemicheli.minecraft-servers")
 public class MinecraftServerOptions {
   private String namespace = "minecraft-servers";
   private String baseDomain = "lorisdemicheli.it";
   private String curseForgeApiKey; // Necessario per modpack CurseForge
+  private String password;
 }
