@@ -1,6 +1,5 @@
 package it.lorisdemicheli.minecraft_servers_controller.domain;
 
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -8,15 +7,14 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
-public class Server implements TypeMinecraft {
+public class ServerInstanceDto  {
 
   private String name;
-  private Type type;
-  private double cpu;
-  private double memory;
+  private SmartServerTypeDto type;
+  private int cpu = 1000; // milli cpu
+  private int memory = 1024; //mega byte
+  
   private boolean eula;
-
   private String version;
   private String modrinthProjectId;
   private String curseforgePageUrl;

@@ -16,10 +16,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
 
-import it.lorisdemicheli.minecraft_servers_controller.domain.ConfigurableOptions;
-import it.lorisdemicheli.minecraft_servers_controller.domain.Server;
-import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInfo;
-import it.lorisdemicheli.minecraft_servers_controller.domain.Type;
+import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceDto;
+import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceInfoDto;
+import it.lorisdemicheli.minecraft_servers_controller.domain.SmartServerTypeDto;
 import it.lorisdemicheli.minecraft_servers_controller.service.KubernetesServerInstanceService;
 
 //@Api
@@ -31,20 +30,20 @@ public class ServerController {
 	private KubernetesServerInstanceService service;
 
 	@GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<List<Server>> getAllServers() {
+	public ResponseEntity<List<ServerInstanceDto>> getAllServers() {
 		return ResponseEntity.ok(service.getServerList());
 	}
 
 	@GetMapping(path = "/{serverName}", produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<Server> getServer(@PathVariable String serverName) {
+	public ResponseEntity<ServerInstanceDto> getServer(@PathVariable String serverName) {
 		return ResponseEntity.ok(service.getServer(serverName));
 	}
 
 	@PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<Server> createServer(@RequestParam String name, @RequestParam Type type,
-			@RequestBody ConfigurableOptions options) {
+	public ResponseEntity<ServerInstanceDto> createServer(@RequestParam String name, @RequestParam SmartServerTypeDto type,
+			@RequestBody ServerInstanceDto instance) {
 
-		Server serverCreated = service.createServer(name, type, options);
+		ServerInstanceDto serverCreated = service.createServer(instance);
 
 		URI location = MvcUriComponentsBuilder //
 				.fromMethodName( //
@@ -63,7 +62,7 @@ public class ServerController {
 	}
 
 	@GetMapping(path = "/{serverName}/info", produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<ServerInfo> getServerInfo(@PathVariable String serverName) {
+	public ResponseEntity<ServerInstanceInfoDto> getServerInfo(@PathVariable String serverName) {
 		return ResponseEntity.ok(service.getServerInfo(serverName));
 	}
 

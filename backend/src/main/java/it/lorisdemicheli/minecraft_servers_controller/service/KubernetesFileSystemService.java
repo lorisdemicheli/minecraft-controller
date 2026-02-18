@@ -72,7 +72,6 @@ public class KubernetesFileSystemService {
     executeCommand(ns, pod, container, new String[] {"touch", path});
   }
 
-  // ESECUZIONE COMANDI CON GESTIONE ROBUSTA DEGLI STREAM
   private String executeCommand(String ns, String pod, String container, String[] command) throws IOException, InterruptedException, ApiException {
     Process proc = exec.exec(ns, pod, command, container, false, false);
 
