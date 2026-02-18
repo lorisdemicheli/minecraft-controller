@@ -40,8 +40,7 @@ public class ServerController {
 	}
 
 	@PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<ServerInstanceDto> createServer(@RequestParam String name, @RequestParam SmartServerTypeDto type,
-			@RequestBody ServerInstanceDto instance) {
+	public ResponseEntity<ServerInstanceDto> createServer(@RequestBody ServerInstanceDto instance) {
 
 		ServerInstanceDto serverCreated = service.createServer(instance);
 
