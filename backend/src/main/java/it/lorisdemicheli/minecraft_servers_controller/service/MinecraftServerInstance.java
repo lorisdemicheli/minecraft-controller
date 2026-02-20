@@ -38,6 +38,7 @@ import it.lorisdemicheli.minecraft_servers_controller.domain.FileEntry;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceDto;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceInfoDto;
 import it.lorisdemicheli.minecraft_servers_controller.domain.SmartServerTypeDto;
+import it.lorisdemicheli.minecraft_servers_controller.exception.ConflictException;
 import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -464,7 +465,9 @@ public class MinecraftServerInstance {
   }
 
   private void validate(ServerInstanceDto server) {
-
+    if(server.getName().equals("console")) {
+      throw new ConflictException("Reserved name");
+    }
   }
 
   private V1ResourceRequirements getRequirements(ServerInstanceDto instance) {

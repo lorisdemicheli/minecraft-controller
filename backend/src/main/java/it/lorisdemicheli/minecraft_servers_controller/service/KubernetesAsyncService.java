@@ -14,6 +14,7 @@ import io.kubernetes.client.openapi.models.V1Pod;
 import io.kubernetes.client.openapi.models.V1Service;
 import io.kubernetes.client.openapi.models.V1StatefulSet;
 import io.kubernetes.client.openapi.models.V1Status;
+import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceAlreadyExistsException;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Flux;
@@ -172,6 +173,9 @@ public class KubernetesAsyncService {
     if (throwable instanceof ApiException apiE) {
       if (apiE.getCode() == 404) {
         return new ResourceNotFoundException();
+      }
+      if (apiE.getCode() == 409) {
+        return new ResourceAlreadyExistsException();
       }
     }
 
