@@ -440,7 +440,7 @@ public class MinecraftServerInstance {
     path = Strings.CS.prependIfMissing(path, ".");
 
     final String finalPath = path;
-    
+
     fileSystemService.deletePath( //
         serverOptions.getNamespace(), //
         getPodName(serverName), //

@@ -46,8 +46,7 @@ public class MinecraftConsoleService {
     );
   }
 
-  public List<String> getLogs(String namespace, String pod, String container, int limit,
-      int skip) {
+  public List<String> getLogs(String namespace, String pod, String container, int limit, int skip) {
     String command = String.format("tail -n %d %s | head -n %d", skip + limit, LOG_FILE, limit);
     return kubernetesService
         .execStream(namespace, pod, container, new String[] {"sh", "-c", command}) //
@@ -67,7 +66,7 @@ public class MinecraftConsoleService {
             .cache(1) //
     );
   }
-  
+
   public ServerInstanceInfoDto getServerInfo(String namespace, String pod, String container) {
     return getServerState(namespace, pod) //
         .flatMap(state -> getMonoServerInfo(namespace, pod, container, state)) //
@@ -97,7 +96,7 @@ public class MinecraftConsoleService {
     if (state != ServerState.RUNNING) {
       return Mono.just(new ServerInstanceInfoDto(state));
     }
-    
+
     String[] cmd = {"mc-monitor", "status", "--host", "localhost", "--port", "25565", "--json"};
     return kubernetesService //
         .execCommand(namespace, pod, container, cmd) //
@@ -130,9 +129,8 @@ public class MinecraftConsoleService {
           return instanceDto;
         });
   }
-  
-  private String getKey(String namespace, String pod,
-      String container) {
+
+  private String getKey(String namespace, String pod, String container) {
     return String.format("%s-%s-%s", namespace, pod, container);
   }
 

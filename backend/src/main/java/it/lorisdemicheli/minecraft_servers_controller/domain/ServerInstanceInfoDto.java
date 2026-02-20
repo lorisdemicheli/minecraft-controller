@@ -8,9 +8,9 @@ import lombok.Setter;
 @Setter
 @RequiredArgsConstructor
 public class ServerInstanceInfoDto {
-	private final ServerState state;
-	private ServerVersionDto version;
-	private ServerPopulationDto population;
-	private ServerDescriptionDto description;
-	private String icon;
+  private final ServerState state;
+  private ServerVersionDto version;
+  private ServerPopulationDto population;
+  private ServerDescriptionDto description;
+  private String icon;
 }

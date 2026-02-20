@@ -167,7 +167,7 @@ public class KubernetesAsyncService {
       }
     }).onErrorMap(this::errorMapper);
   }
-  
+
   private Throwable errorMapper(Throwable throwable) {
     if (throwable instanceof ApiException apiE) {
       if (apiE.getCode() == 404) {

@@ -8,8 +8,7 @@ import lombok.Setter;
 @Getter
 @Setter
 public class ServerPopulationDto {
-
-	private int online;
-    private int max;
-    private List<PlayerDto> players;
+  private int online;
+  private int max;
+  private List<PlayerDto> players;
 }

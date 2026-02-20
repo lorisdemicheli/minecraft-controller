@@ -41,7 +41,7 @@ public class KubernetsConfig {
   Exec exec(ApiClient apiClient) {
     return new Exec(apiClient);
   }
-  
+
   @Bean
   ObjectMapper objectMapper() {
     return new ObjectMapper();

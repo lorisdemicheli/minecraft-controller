@@ -8,5 +8,4 @@ public enum ServerState {
   STARTING, //
   RUNNING, //
   SHUTDOWN; //
-  
 }

@@ -8,12 +8,10 @@ import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
 public enum SmartServerTypeDto {
-  
-
-  // CF_API_KEY
   VANILLA("VANILLA") {
     @Override
-    public List<V1EnvVar> specificEnv(ServerInstanceDto instance, MinecraftServerOptions serverOptions) {
+    public List<V1EnvVar> specificEnv(ServerInstanceDto instance,
+        MinecraftServerOptions serverOptions) {
       List<V1EnvVar> envs = new ArrayList<>();
       envs.add(new V1EnvVar().name("VERSION").value(instance.getVersion()));
       return envs;
@@ -21,7 +19,8 @@ public enum SmartServerTypeDto {
   }, //
   PLUGIN("PAPER") {
     @Override
-    public List<V1EnvVar> specificEnv(ServerInstanceDto instance, MinecraftServerOptions serverOptions) {
+    public List<V1EnvVar> specificEnv(ServerInstanceDto instance,
+        MinecraftServerOptions serverOptions) {
       List<V1EnvVar> envs = new ArrayList<>();
       envs.add(new V1EnvVar().name("VERSION").value(instance.getVersion()));
       return envs;
@@ -29,7 +28,8 @@ public enum SmartServerTypeDto {
   }, //
   MOD("FORGE") {
     @Override
-    public List<V1EnvVar> specificEnv(ServerInstanceDto instance, MinecraftServerOptions serverOptions) {
+    public List<V1EnvVar> specificEnv(ServerInstanceDto instance,
+        MinecraftServerOptions serverOptions) {
       List<V1EnvVar> envs = new ArrayList<>();
       envs.add(new V1EnvVar().name("VERSION").value(instance.getVersion()));
       return envs;
@@ -37,7 +37,8 @@ public enum SmartServerTypeDto {
   }, //
   MODRINTH("MODRINTH") {
     @Override
-    public List<V1EnvVar> specificEnv(ServerInstanceDto instance, MinecraftServerOptions serverOptions) {
+    public List<V1EnvVar> specificEnv(ServerInstanceDto instance,
+        MinecraftServerOptions serverOptions) {
       List<V1EnvVar> envs = new ArrayList<>();
       envs.add(new V1EnvVar().name("MODRINTH_PROJECT").value(instance.getModrinthProjectId()));
       return envs;
@@ -45,7 +46,8 @@ public enum SmartServerTypeDto {
   }, //
   CURSEFORGE("AUTO_CURSEFORGE") {
     @Override
-    public List<V1EnvVar> specificEnv(ServerInstanceDto instance, MinecraftServerOptions serverOptions) {
+    public List<V1EnvVar> specificEnv(ServerInstanceDto instance,
+        MinecraftServerOptions serverOptions) {
       List<V1EnvVar> envs = new ArrayList<>();
       envs.add(new V1EnvVar().name("CF_API_KEY").value(serverOptions.getCurseForgeApiKey()));
       envs.add(new V1EnvVar().name("CF_PAGE_URL").value(instance.getCurseforgePageUrl()));
@@ -55,7 +57,8 @@ public enum SmartServerTypeDto {
 
   private final String value;
 
-  protected abstract List<V1EnvVar> specificEnv(ServerInstanceDto instance, MinecraftServerOptions serverOptions);
+  protected abstract List<V1EnvVar> specificEnv(ServerInstanceDto instance,
+      MinecraftServerOptions serverOptions);
 
   public List<V1EnvVar> getEnvs(ServerInstanceDto instance, MinecraftServerOptions serverOptions) {
     List<V1EnvVar> envs = new ArrayList<>();

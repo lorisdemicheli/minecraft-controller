@@ -6,6 +6,6 @@ import lombok.Setter;
 @Getter
 @Setter
 public class ServerVersionDto {
-	private String name;
-	private int protocol;
+  private String name;
+  private int protocol;
 }
