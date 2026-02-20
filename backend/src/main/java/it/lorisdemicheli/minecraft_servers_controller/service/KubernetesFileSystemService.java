@@ -2,100 +2,78 @@ package it.lorisdemicheli.minecraft_servers_controller.service;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import io.kubernetes.client.Copy;
-import io.kubernetes.client.Exec;
-import io.kubernetes.client.openapi.ApiException;
 import it.lorisdemicheli.minecraft_servers_controller.domain.FileEntry;
+import lombok.RequiredArgsConstructor;
+import reactor.core.publisher.Mono;
 
 @Service
+@RequiredArgsConstructor
 public class KubernetesFileSystemService {
 
-  @Autowired
-  private Exec exec;
-  @Autowired
-  private Copy copy;
+  private final Copy copy;
+  private final KubernetesAsyncService kubernetesService;
 
-  // LISTA FILE CON METADATI
-  public List<FileEntry> listFiles(String ns, String pod, String container, String path) throws IOException, InterruptedException, ApiException  {
+  public Mono<List<FileEntry>> getFiles(String namespace, String pod, String container,
+      String path) {
     String cmd = String.format("stat -c '%%n|%%F|%%s|%%Y' %s/*", path);
-    String output = executeCommand(ns, pod, container, new String[] {"sh", "-c", cmd});
-
-    if (output.isBlank()) {
-      return List.of();
-    }
-
-    List<FileEntry> entries = new ArrayList<>();
-    for (String line : output.split("\n")) {
-      String[] p = line.split("\\|");
-      if (partsValid(p)) {
-        entries.add(FileEntry.fromStat(p[0], p[1], Long.parseLong(p[2]), Long.parseLong(p[3])));
-      }
-    }
-    return entries;
+    return kubernetesService.execCommand(namespace, pod, container, new String[] {"sh", "-c", cmd})
+        .map(output -> {
+          List<FileEntry> entries = new ArrayList<>();
+          for (String line : output.split("\n")) {
+            String[] p = line.split("\\|");
+            if (partsValid(p)) {
+              entries
+                  .add(FileEntry.fromStat(p[0], p[1], Long.parseLong(p[2]), Long.parseLong(p[3])));
+            }
+          }
+          return entries;
+        });
   }
 
-  public void uploadFile(String ns, String pod, String container, String remotePath,
-      InputStream inputStream) throws IOException, ApiException  {
-    Path tempFile = Files.createTempFile("k8s-up-", ".tmp");
-    try {
-      try (inputStream) {
-        Files.copy(inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
-      }
-      copy.copyFileToPod(ns, pod, container, tempFile, Path.of(remotePath));
-    } finally {
-      Files.deleteIfExists(tempFile);
-    }
+  public Mono<Void> uploadFile(String namespace, String pod, String container, String path,
+      InputStream inputStream) {
+    return Mono.using(() -> Files.createTempFile("k8s-up-", ".tmp"),
+        tempFile -> Mono.fromCallable(() -> {
+          try (inputStream) {
+            Files.copy(inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
+          }
+          copy.copyFileToPod(namespace, pod, container, tempFile, Path.of(path));
+          return null;
+        }), tempFile -> {
+          try {
+            Files.deleteIfExists(tempFile);
+          } catch (IOException e) {
+          }
+        });
   }
 
-  public InputStream downloadFile(String ns, String pod, String container, String remotePath) throws ApiException, IOException {
-    return copy.copyFileFromPod(ns, pod, container, remotePath);
+  public Mono<InputStream> downloadFile(String namespace, String pod, String container,
+      String path) {
+    return Mono.fromCallable(() -> {
+      return copy.copyFileFromPod(namespace, pod, container, path);
+    });
   }
 
-  public void createDirectory(String ns, String pod, String container, String path) throws IOException, InterruptedException, ApiException {
-    executeCommand(ns, pod, container, new String[] {"mkdir", "-p", path});
+  public Mono<String> createDirectory(String namespace, String pod, String container, String path) {
+    return kubernetesService.execCommand(namespace, pod, container,
+        new String[] {"sh", "-c", "mkdir", "-p", path});
   }
 
-  public void deletePath(String ns, String pod, String container, String path) throws IOException, InterruptedException, ApiException  {
-    executeCommand(ns, pod, container, new String[] {"rm", "-rf", path});
+  public Mono<String> deletePath(String namespace, String pod, String container, String path) {
+    return kubernetesService.execCommand(namespace, pod, container,
+        new String[] {"sh", "-c", "rm", "-rf", path});
   }
 
-  public void touchFile(String ns, String pod, String container, String path) throws IOException, InterruptedException, ApiException {
-    executeCommand(ns, pod, container, new String[] {"touch", path});
-  }
-
-  private String executeCommand(String ns, String pod, String container, String[] command) throws IOException, InterruptedException, ApiException {
-    Process proc = exec.exec(ns, pod, command, container, false, false);
-
-    byte[] outBytes;
-    byte[] errBytes;
-
-    try (var out = proc.getInputStream(); var err = proc.getErrorStream()) {
-      outBytes = out.readAllBytes();
-      errBytes = err.readAllBytes();
-    }
-
-    if (!proc.waitFor(15, TimeUnit.SECONDS)) {
-      proc.destroy();
-      throw new IOException("K8s Command Timeout");
-    }
-
-    if (proc.exitValue() != 0) {
-      String errorMsg = new String(errBytes, StandardCharsets.UTF_8);
-      if (errorMsg.contains("No such file"))
-        return "";
-      throw new IOException("K8s Error (Code " + proc.exitValue() + "): " + errorMsg);
-    }
-
-    return new String(outBytes, StandardCharsets.UTF_8).trim();
+  public Mono<String> touchFile(String namespace, String pod, String container, String path) {
+    return kubernetesService.execCommand(namespace, pod, container,
+        new String[] {"sh", "-c", "touch", path});
   }
 
   private boolean partsValid(String[] p) {
