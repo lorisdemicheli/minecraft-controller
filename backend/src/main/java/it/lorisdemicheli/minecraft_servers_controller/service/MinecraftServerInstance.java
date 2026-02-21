@@ -439,7 +439,7 @@ public class MinecraftServerInstance {
   }
 
   public void createEmptyFile(String serverName, String path) {
-    path = Strings.CS.prependIfMissing(path, ".");
+    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
 
     final String finalPath = path;
 
@@ -460,7 +460,7 @@ public class MinecraftServerInstance {
   }
 
   public void deletePath(String serverName, String path) {
-    path = Strings.CS.prependIfMissing(path, ".");
+    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
 
     final String finalPath = path;
 
