@@ -357,9 +357,9 @@ public class MinecraftServerInstance {
   }
 
   // ----- FILE SYSTEM -----
-
+  
   public List<FileEntry> getFiles(String serverName, String path) {
-    path = Strings.CS.prependIfMissing(path, ".");
+    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
 
     final String finalPath = path;
 
@@ -380,7 +380,7 @@ public class MinecraftServerInstance {
   }
 
   public void downloadFile(String serverName, String path, OutputStream outputStream) {
-    path = Strings.CS.prependIfMissing(path, ".");
+    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
 
     final String finalPath = path;
 
@@ -402,7 +402,7 @@ public class MinecraftServerInstance {
   }
 
   public void uploadFile(String serverName, String path, Resource resource) {
-    path = Strings.CS.prependIfMissing(path, ".");
+    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
     path = Strings.CS.appendIfMissing(path, "/" + resource.getFilename());
 
     final String finalPath = path;
@@ -418,7 +418,7 @@ public class MinecraftServerInstance {
   }
 
   public void createDirectory(String serverName, String path) {
-    path = Strings.CS.prependIfMissing(path, ".");
+    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
 
     final String finalPath = path;
 
