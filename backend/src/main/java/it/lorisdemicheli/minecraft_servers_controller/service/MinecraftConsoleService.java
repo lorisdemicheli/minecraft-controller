@@ -29,10 +29,9 @@ public class MinecraftConsoleService {
   private final Map<String, Flux<String>> logStream = new ConcurrentHashMap<>();
   private final Map<String, Flux<ServerInstanceInfoDto>> infoStream = new ConcurrentHashMap<>();
 
-  public void sendMinecraftCommand(String namespace, String pod, String container, String command) {
+  public Mono<String> sendMinecraftCommand(String namespace, String pod, String container, String command) {
     String cmd[] = {"gosu", "minecraft", "mc-send-to-console", command};
-    kubernetesService.execCommand(namespace, pod, container, cmd) //
-        .block(Duration.ofSeconds(1));
+    return kubernetesService.execCommand(namespace, pod, container, cmd);
   }
 
   public Flux<String> getStreamLogs(String namespace, String pod, String container) {
@@ -46,12 +45,11 @@ public class MinecraftConsoleService {
     );
   }
 
-  public List<String> getLogs(String namespace, String pod, String container, int limit, int skip) {
-    String command = String.format("tail -n %d %s | head -n %d", skip + limit, LOG_FILE, limit);
+  public Mono<List<String>> getLogs(String namespace, String pod, String container, int limit, int skip) {
+    String command = String.format("head -n -%d %s | tail -n %d", skip, LOG_FILE, limit);
     return kubernetesService
         .execStream(namespace, pod, container, new String[] {"sh", "-c", command}) //
-        .collectList() //
-        .block(Duration.ofSeconds(3));
+        .collectList();
   }
 
   public Flux<ServerInstanceInfoDto> getStreamServerInfo(String namespace, String pod,
@@ -67,10 +65,9 @@ public class MinecraftConsoleService {
     );
   }
 
-  public ServerInstanceInfoDto getServerInfo(String namespace, String pod, String container) {
+  public Mono<ServerInstanceInfoDto> getServerInfo(String namespace, String pod, String container) {
     return getServerState(namespace, pod) //
-        .flatMap(state -> getMonoServerInfo(namespace, pod, container, state)) //
-        .block(Duration.ofSeconds(3));
+        .flatMap(state -> getMonoServerInfo(namespace, pod, container, state));
   }
 
   private Mono<ServerState> getServerState(String namespace, String podName) {

@@ -23,6 +23,7 @@ public class KubernetesExplorerService {
             .withNamespace(namespace) //
         .endMetadata() //
         .withNewSpec() //
+            .withRuntimeClassName("runc")
             .addNewContainer() //
                 .withName(EXPLORER_CONTAINER) //
                 .withImage(EXPLORER_IMAGE) //

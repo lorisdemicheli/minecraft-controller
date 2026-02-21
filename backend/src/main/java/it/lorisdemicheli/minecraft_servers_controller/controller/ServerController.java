@@ -12,12 +12,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceDto;
 import it.lorisdemicheli.minecraft_servers_controller.service.MinecraftServerInstance;
 import lombok.RequiredArgsConstructor;
 
 // @Api
 @RestController
+@Tag(name = "SERVER")
 @RequiredArgsConstructor
 @RequestMapping("/servers")
 public class ServerController {

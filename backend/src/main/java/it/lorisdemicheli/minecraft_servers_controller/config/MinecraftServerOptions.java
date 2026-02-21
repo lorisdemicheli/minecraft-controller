@@ -13,5 +13,15 @@ public class MinecraftServerOptions {
   private String namespace = "minecraft-servers";
   private String baseDomain = "lorisdemicheli.it";
   private String curseForgeApiKey; // Necessario per modpack CurseForge
-  private String password;
+
+  private MinecraftServerSecurityOptions security;
+
+  @Getter
+  @Setter
+  public static class MinecraftServerSecurityOptions {
+    private String username = "admin";
+    private String password;
+    private String jwtSecret;
+    private Long jwtExpirationMs = 86400000L;
+  }
 }

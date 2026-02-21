@@ -13,12 +13,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import it.lorisdemicheli.minecraft_servers_controller.domain.FileEntry;
 import it.lorisdemicheli.minecraft_servers_controller.service.MinecraftServerInstance;
 import lombok.RequiredArgsConstructor;
 
 // @Api
 @RestController
+@Tag(name = "FILE SYSTEM")
 @RequiredArgsConstructor
 @RequestMapping("/servers/{serverName}/files")
 public class ServerFileController {

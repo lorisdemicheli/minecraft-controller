@@ -5,13 +5,17 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ConflictException;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceAlreadyExistsException;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceNotFoundException;
+import lombok.extern.slf4j.Slf4j;
 
-@ControllerAdvice
+@Slf4j
+@RestControllerAdvice
 public class GlobalExceptionHandler {
 
   @ExceptionHandler({ResourceAlreadyExistsException.class, ConflictException.class})
@@ -32,5 +36,23 @@ public class GlobalExceptionHandler {
     body.put("error", "Not Found");
 
     return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
+  }
+
+  @ExceptionHandler(Exception.class)
+  public ResponseEntity<Map<String, String>> handleGenericException(Exception ex) {
+    log.error("Errore interno: ", ex);  // stampa stacktrace completo
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .body(Map.of("error", "Errore interno del server", "message", ex.getMessage()));
+  }
+
+  @ExceptionHandler(BadCredentialsException.class)
+  public ResponseEntity<Map<String, String>> handleBadCredentials(BadCredentialsException ex) {
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+        .body(Map.of("error", "Credenziali errate"));
+  }
+
+  @ExceptionHandler(AccessDeniedException.class)
+  public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException ex) {
+    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Accesso negato"));
   }
 }

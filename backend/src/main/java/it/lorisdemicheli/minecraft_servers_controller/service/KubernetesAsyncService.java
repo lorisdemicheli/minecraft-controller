@@ -27,6 +27,12 @@ public class KubernetesAsyncService {
   private final Exec exec;
   private final AppsV1Api appsApi;
   private final CoreV1Api coreApi;
+  
+  
+//  public Mono<V1Pod> getPodMetrics(String namespace, String pod) {
+//    coreApi.getpo
+//  }
+  
 
   public Mono<V1Pod> getNamespacedPod(String namespace, String pod) {
     return Mono.fromCallable(() -> {
@@ -100,7 +106,7 @@ public class KubernetesAsyncService {
   public Mono<V1Pod> deleteNamespacedPod(String namespace, String pod) {
     return Mono.fromCallable(() -> {
       return coreApi //
-          .deleteNamespacedPod(namespace, pod) //
+          .deleteNamespacedPod(pod, namespace) //
           .execute();
     }).onErrorMap(this::errorMapper);
   }
@@ -109,7 +115,7 @@ public class KubernetesAsyncService {
       String persistentVolumeClaim) {
     return Mono.fromCallable(() -> {
       return coreApi //
-          .deleteNamespacedPersistentVolumeClaim(namespace, persistentVolumeClaim) //
+          .deleteNamespacedPersistentVolumeClaim(persistentVolumeClaim, namespace) //
           .execute();
     }).onErrorMap(this::errorMapper);
   }
@@ -117,7 +123,7 @@ public class KubernetesAsyncService {
   public Mono<V1Service> deleteNamespacedService(String namespace, String service) {
     return Mono.fromCallable(() -> {
       return coreApi //
-          .deleteNamespacedService(namespace, service) //
+          .deleteNamespacedService(service, namespace) //
           .execute();
     }).onErrorMap(this::errorMapper);
   }
@@ -125,7 +131,7 @@ public class KubernetesAsyncService {
   public Mono<V1Status> deleteNamespacedStatefulSet(String namespace, String statefulSet) {
     return Mono.fromCallable(() -> {
       return appsApi //
-          .deleteNamespacedStatefulSet(namespace, statefulSet) //
+          .deleteNamespacedStatefulSet(statefulSet, namespace) //
           .execute();
     }).onErrorMap(this::errorMapper);
   }

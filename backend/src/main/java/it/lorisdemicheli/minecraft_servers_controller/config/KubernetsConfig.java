@@ -1,12 +1,10 @@
 package it.lorisdemicheli.minecraft_servers_controller.config;
 
 import java.io.IOException;
-
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import io.kubernetes.client.Copy;
 import io.kubernetes.client.Exec;
 import io.kubernetes.client.openapi.ApiClient;
@@ -16,11 +14,19 @@ import io.kubernetes.client.util.Config;
 
 @Configuration
 public class KubernetsConfig {
+  
+  @Value("${kube.config.path:#{systemProperties['user.home']}/.kube/config}")
+  private String kubeConfigPath;
 
   @Bean
   ApiClient apiClient() throws IOException {
-    return Config.defaultClient();
+      return Config.fromConfig(kubeConfigPath);
   }
+
+//  @Bean
+//  ApiClient apiClient() throws IOException {
+//    return Config.defaultClient();
+//  }
 
   @Bean
   CoreV1Api coreV1Api(ApiClient apiClient) {

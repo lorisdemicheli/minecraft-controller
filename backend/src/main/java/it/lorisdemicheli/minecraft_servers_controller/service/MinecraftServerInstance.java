@@ -136,10 +136,10 @@ public class MinecraftServerInstance {
     return kubernetesService.createNamespacedPersistentVolumeClaim( //
         serverOptions.getNamespace(), //
         pvc //
-    ).then(explorerService.createExplorerPod( //
-        serverOptions.getNamespace(), //
-        server.getName() //
-    ) //
+    // ).then(explorerService.createExplorerPod( //
+    // serverOptions.getNamespace(), //
+    // server.getName() //
+    // ) //
     ).then( //
         kubernetesService.createNamespacedService( //
             serverOptions.getNamespace(), //
@@ -152,7 +152,7 @@ public class MinecraftServerInstance {
         ) //
     ).map(this::toDto) //
         .subscribeOn(Schedulers.boundedElastic()) //
-        .block(Duration.ofSeconds(10));
+        .block(Duration.ofSeconds(30));
   }
 
   public ServerInstanceDto read(String serverName) {
@@ -193,7 +193,7 @@ public class MinecraftServerInstance {
       );
     }).map(this::toDto) //
         .subscribeOn(Schedulers.boundedElastic()) //
-        .block(Duration.ofSeconds(2));
+        .block(Duration.ofSeconds(30));
   }
 
   public void delete(String serverName) {
@@ -230,16 +230,31 @@ public class MinecraftServerInstance {
 
   // ----- CONSOLE -----
 
+  // public void startServer(String serverName) {
+  // explorerService.deleteExplorerPod( //
+  // serverOptions.getNamespace(), //
+  // serverName //
+  // ).flatMap(v -> {
+  // return kubernetesService.getNamespacedStatefulSet( //
+  // serverOptions.getNamespace(), //
+  // serverName //
+  // );
+  // }).flatMap(statefulSet -> {
+  // statefulSet.getSpec().setReplicas(1);
+  // return kubernetesService.replaceNamespacedStatefulSet( //
+  // serverOptions.getNamespace(), //
+  // serverName, //
+  // statefulSet //
+  // );
+  // }).subscribeOn(Schedulers.boundedElastic()) //
+  // .block(Duration.ofSeconds(10));
+  // }
+
   public void startServer(String serverName) {
-    explorerService.deleteExplorerPod( //
+    kubernetesService.getNamespacedStatefulSet( //
         serverOptions.getNamespace(), //
         serverName //
-    ).flatMap(v -> {
-      return kubernetesService.getNamespacedStatefulSet( //
-          serverOptions.getNamespace(), //
-          serverName //
-      );
-    }).flatMap(statefulSet -> {
+    ).flatMap(statefulSet -> {
       statefulSet.getSpec().setReplicas(1);
       return kubernetesService.replaceNamespacedStatefulSet( //
           serverOptions.getNamespace(), //
@@ -301,7 +316,8 @@ public class MinecraftServerInstance {
         getPodName(serverName), //
         CONTAINER_NAME, //
         command//
-    );
+    ).subscribeOn(Schedulers.boundedElastic()) //
+        .block(Duration.ofSeconds(20));
   }
 
   public List<String> getHistoryLogs(String serverName, int limit, int skip) {
@@ -310,28 +326,34 @@ public class MinecraftServerInstance {
         getPodName(serverName), //
         CONTAINER_NAME, //
         limit, //
-        skip);
+        skip //
+    ).subscribeOn(Schedulers.boundedElastic()) //
+        .block(Duration.ofSeconds(2));
   }
 
   public Flux<String> getLogs(String serverName) {
     return minecraftConsoleService.getStreamLogs( //
         serverOptions.getNamespace(), //
         getPodName(serverName), //
-        CONTAINER_NAME);
+        CONTAINER_NAME //
+    ).subscribeOn(Schedulers.boundedElastic());
   }
 
   public ServerInstanceInfoDto getServerInfo(String serverName) {
     return minecraftConsoleService.getServerInfo( //
         serverOptions.getNamespace(), //
         getPodName(serverName), //
-        CONTAINER_NAME);
+        CONTAINER_NAME //
+    ).subscribeOn(Schedulers.boundedElastic()) //
+        .block(Duration.ofSeconds(2));
   }
 
   public Flux<ServerInstanceInfoDto> getStreamServerInfo(String serverName) {
     return minecraftConsoleService.getStreamServerInfo( //
         serverOptions.getNamespace(), //
         getPodName(serverName), //
-        CONTAINER_NAME);
+        CONTAINER_NAME //
+    ).subscribeOn(Schedulers.boundedElastic());
   }
 
   // ----- FILE SYSTEM -----
@@ -465,13 +487,13 @@ public class MinecraftServerInstance {
   }
 
   private void validate(ServerInstanceDto server) {
-    if(server.getName().equals("console")) {
+    if (server.getName().equals("console")) {
       throw new ConflictException("Reserved name");
     }
   }
 
-  private V1ResourceRequirements getRequirements(ServerInstanceDto instance) {
-    String memory = String.format("%dM", (int) instance.getMemory() * 1.15);
+  private static V1ResourceRequirements getRequirements(ServerInstanceDto instance) {
+    String memory = String.format("%dM", (int) (instance.getMemory() * 1.15));
     String cpu = String.format("%dm", instance.getCpu());
     return new V1ResourceRequirements() //
         .putLimitsItem("cpu", new Quantity(cpu)) //

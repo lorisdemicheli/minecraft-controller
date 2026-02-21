@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceInfoDto;
 import it.lorisdemicheli.minecraft_servers_controller.service.MinecraftServerInstance;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ import reactor.core.publisher.Flux;
 
 // @Api
 @RestController
+@Tag(name = "CONSOLE")
 @RequiredArgsConstructor
 @RequestMapping("/servers/{serverName}/console")
 public class ServerConsoleController {
@@ -26,6 +28,11 @@ public class ServerConsoleController {
   @GetMapping(path = "/info", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<ServerInstanceInfoDto> getServerInfo(@PathVariable String serverName) {
     return ResponseEntity.ok(service.getServerInfo(serverName));
+  }
+  
+  @GetMapping(value = "/info/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+  public Flux<ServerInstanceInfoDto> getStreamServerInfo(@PathVariable String serverName) {
+    return service.getStreamServerInfo(serverName);
   }
 
   @PostMapping(value = "/start")
