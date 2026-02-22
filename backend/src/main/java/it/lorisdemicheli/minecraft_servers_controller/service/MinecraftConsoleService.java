@@ -14,6 +14,7 @@ import it.lorisdemicheli.minecraft_servers_controller.domain.ServerVersionDto;
 import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -29,23 +30,35 @@ public class MinecraftConsoleService {
   private final Map<String, Flux<String>> logStream = new ConcurrentHashMap<>();
   private final Map<String, Flux<ServerInstanceInfoDto>> infoStream = new ConcurrentHashMap<>();
 
-  public Mono<String> sendMinecraftCommand(String namespace, String pod, String container, String command) {
+  public Mono<String> sendMinecraftCommand(String namespace, String pod, String container,
+      String command) {
     String cmd[] = {"gosu", "minecraft", "mc-send-to-console", command};
     return kubernetesService.execCommand(namespace, pod, container, cmd);
   }
 
   public Flux<String> getStreamLogs(String namespace, String pod, String container) {
-    return logStream.computeIfAbsent(getKey(namespace, pod, container), //
-        k -> kubernetesService
-            .execStream(namespace, pod, container, new String[] {"tail", "-f", LOG_FILE}) //
-            .doFinally(signal -> logStream.remove(getKey(namespace, pod, container))) //
-            .publish() //
-            .refCount() //
-            .cache(10) //
-    );
+    String key = getKey(namespace, pod, container);
+
+    if (!logStream.containsKey(key)) {
+      Flux<String> newLog = kubernetesService.execStream(namespace, pod, container, //
+          new String[] {"tail", "-n", "10", "-f", LOG_FILE}) //
+          .doFinally(signal -> {
+            logStream.remove(key);
+          }) //
+          .subscribeOn(Schedulers.boundedElastic()) //
+          .publish() //
+          .refCount(1, Duration.ofSeconds(5));
+      logStream.put(key, newLog);
+      return newLog;
+    } else {
+      return getLogs(namespace, pod, container, 10, 0) //
+          .flatMapIterable(list -> list) //
+          .concatWith(logStream.get(key));
+    }
   }
 
-  public Mono<List<String>> getLogs(String namespace, String pod, String container, int limit, int skip) {
+  public Mono<List<String>> getLogs(String namespace, String pod, String container, int limit,
+      int skip) {
     String command = String.format("head -n -%d %s | tail -n %d", skip, LOG_FILE, limit);
     return kubernetesService
         .execStream(namespace, pod, container, new String[] {"sh", "-c", command}) //
@@ -55,14 +68,13 @@ public class MinecraftConsoleService {
   public Flux<ServerInstanceInfoDto> getStreamServerInfo(String namespace, String pod,
       String container) {
     return infoStream.computeIfAbsent(getKey(namespace, pod, container), //
-        k -> Flux.concat(Flux.just(0L), Flux.interval(Duration.ofSeconds(10))) //
-            .flatMap(i -> getServerState(namespace, pod)) //
+        k -> Flux.concat(Flux.just(0L), Flux.interval(Duration.ofSeconds(10)))
+            .flatMap(i -> getServerState(namespace, pod))
             .flatMap(state -> getMonoServerInfo(namespace, pod, container, state))
-            .doFinally(signal -> infoStream.remove(getKey(namespace, pod, container))) //
-            .publish() //
-            .refCount() //
-            .cache(1) //
-    );
+            .doFinally(signal -> {
+              infoStream.remove(getKey(namespace, pod, container));
+            }).replay(1) //
+            .refCount());
   }
 
   public Mono<ServerInstanceInfoDto> getServerInfo(String namespace, String pod, String container) {

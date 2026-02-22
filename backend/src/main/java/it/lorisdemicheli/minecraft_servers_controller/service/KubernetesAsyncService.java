@@ -157,23 +157,30 @@ public class KubernetesAsyncService {
 
   public Flux<String> execStream(String namespace, String pod, String container, String[] cmd) {
     return Flux.<String>create(sink -> {
-      Process process = null;
-      try {
-        process = exec.exec(namespace, pod, cmd, container, false, false);
-        LineIterator lineIterator =
-            IOUtils.lineIterator(process.getInputStream(), StandardCharsets.UTF_8);
-        while (!sink.isCancelled() && lineIterator.hasNext()) {
-          sink.next(lineIterator.next());
+        Process process = null;
+        try {
+            process = exec.exec(namespace, pod, cmd, container, false, false);
+            
+            final Process finalProcess = process;
+            sink.onCancel(finalProcess::destroy);
+            sink.onDispose(finalProcess::destroy);
+
+            LineIterator lineIterator =
+                IOUtils.lineIterator(process.getInputStream(), StandardCharsets.UTF_8);
+            while (!sink.isCancelled() && lineIterator.hasNext()) {
+                sink.next(lineIterator.next());
+            }
+            sink.complete();
+        } catch (Exception e) {
+            if (!sink.isCancelled()) {
+                sink.error(e);
+            }
+        } finally {
+            if (process != null)
+                process.destroy();
         }
-        sink.complete();
-      } catch (Exception e) {
-        sink.error(e);
-      } finally {
-        if (process != null)
-          process.destroy();
-      }
     }).onErrorMap(this::errorMapper);
-  }
+}
 
   private Throwable errorMapper(Throwable throwable) {
     if (throwable instanceof ApiException apiE) {

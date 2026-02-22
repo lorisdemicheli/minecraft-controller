@@ -359,9 +359,7 @@ public class MinecraftServerInstance {
   // ----- FILE SYSTEM -----
   
   public List<FileEntry> getFiles(String serverName, String path) {
-    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
-
-    final String finalPath = path;
+    final String finalPath = normalizePath(path);
 
     return fileSystemService.getFiles( //
         serverOptions.getNamespace(), //
@@ -380,9 +378,7 @@ public class MinecraftServerInstance {
   }
 
   public void downloadFile(String serverName, String path, OutputStream outputStream) {
-    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
-
-    final String finalPath = path;
+    final String finalPath = normalizePath(path);
 
     fileSystemService.downloadFile( //
         serverOptions.getNamespace(), //
@@ -402,7 +398,7 @@ public class MinecraftServerInstance {
   }
 
   public void uploadFile(String serverName, String path, Resource resource) {
-    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
+    path = normalizePath(path);
     path = Strings.CS.appendIfMissing(path, "/" + resource.getFilename());
 
     final String finalPath = path;
@@ -418,9 +414,7 @@ public class MinecraftServerInstance {
   }
 
   public void createDirectory(String serverName, String path) {
-    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
-
-    final String finalPath = path;
+    final String finalPath = normalizePath(path);
 
     fileSystemService.createDirectory( //
         serverOptions.getNamespace(), //
@@ -439,9 +433,7 @@ public class MinecraftServerInstance {
   }
 
   public void createEmptyFile(String serverName, String path) {
-    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
-
-    final String finalPath = path;
+    final String finalPath = normalizePath(path);
 
     fileSystemService.touchFile( //
         serverOptions.getNamespace(), //
@@ -460,9 +452,7 @@ public class MinecraftServerInstance {
   }
 
   public void deletePath(String serverName, String path) {
-    path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
-
-    final String finalPath = path;
+    final String finalPath = normalizePath(path);
 
     fileSystemService.deletePath( //
         serverOptions.getNamespace(), //
@@ -550,5 +540,9 @@ public class MinecraftServerInstance {
     server.setEula(Boolean.valueOf(labels.get(MinecraftServerLabel.LABEL_SERVER_MINECRAFT_EULA)));
 
     return server;
+  }
+  
+  private String normalizePath(String path) {
+    return path = path.replaceAll("^(\\./)|(^/)|^(?!\\./)", "./");
   }
 }
