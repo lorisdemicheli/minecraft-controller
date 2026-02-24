@@ -18,7 +18,7 @@ export const appConfig: ApplicationConfig = {
     {
       provide: Configuration,
       useFactory: () => new Configuration({
-        basePath: 'http://localhost:9696',
+        basePath: 'http://localhost:8080',
       })
     },
     //  { provide: BASE_PATH, useValue: 'http://localhost:8080' }

@@ -1,7 +1,9 @@
 import {
   Component, OnInit, OnDestroy,
   ViewChild, ElementRef,
-  inject, signal, PLATFORM_ID
+  inject, signal, PLATFORM_ID,
+  afterNextRender,
+  effect
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
@@ -10,10 +12,11 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { Subscription } from 'rxjs';
+import { firstValueFrom, Subscription } from 'rxjs';
 import { CONSOLEService } from '../../core/api-client/api/console.service';
 import { ServerInstanceInfoDto } from '../../core/api-client/model/server-instance-info-dto';
 import { Sse } from '../../core/sse/sse';
+import { CdkVirtualScrollViewport, ScrollingModule } from '@angular/cdk/scrolling';
 
 @Component({
   selector: 'app-server-detail',
@@ -24,6 +27,7 @@ import { Sse } from '../../core/sse/sse';
     MatIconModule,
     MatButtonModule,
     MatTooltipModule,
+    ScrollingModule
   ],
   templateUrl: './server-detail.html',
   styleUrl: './server-detail.scss',
@@ -46,26 +50,49 @@ export class ServerDetail implements OnInit, OnDestroy {
 
   private readonly LOG_FIRST_LINES = 50;
   private historicalLogsLoaded = this.LOG_FIRST_LINES;
-  private shouldScrollToBottom = true;
-  private initializing = true;
-  private scrollingToBottom = false;
+  private canScroll = false;
   private subs = new Subscription();
   private fallbackTimeout: any;
 
   readonly StateEnum = ServerInstanceInfoDto.StateEnum;
 
+  @ViewChild(CdkVirtualScrollViewport)
+  viewport!: CdkVirtualScrollViewport;
+
+private firstBatch = true;
+private autoScrollEnabled = false;
+
+constructor() {
+  effect(() => {
+    const logs = this.logs();
+    
+    if (logs.length > 0 && this.firstBatch) {
+      this.firstBatch = false;
+      setTimeout(() => this.scrollToBottom(), 50);
+      this.canScroll = true;
+      this.autoScrollEnabled = true;
+    }
+  });
+}
+
+  async onScrolledIndexChange(firstVisible: number) {
+  const total = this.viewport.getDataLength();
+  
+  if (this.canScroll) {
+    const distanceFromBottom = total - firstVisible;
+    this.autoScrollEnabled = distanceFromBottom <= 25; // 22 visibili + 3 di tolleranza
+
+    if (firstVisible === 0) {
+      await this.loadMoreHistory();
+      this.viewport.scrollToIndex(this.logs().length - total, 'instant');
+    }
+  }
+}
+
   ngOnInit() {
     if (isPlatformBrowser(this.platformId)) {
       this.startLogStream();
       this.startInfoStream();
-
-      // Fallback: se dopo 3 secondi non sono arrivati abbastanza log, sblocca lo scorrimento
-      this.fallbackTimeout = setTimeout(() => {
-        if (this.initializing) {
-          this.initializing = false;
-          this.scrollToBottom();
-        }
-      }, 3000);
     }
   }
 
@@ -78,66 +105,31 @@ export class ServerDetail implements OnInit, OnDestroy {
 
   // ─── Scroll ────────────────────────────────────────────────────
 
-  onScroll() {
-    const el = this.scrollContainer?.nativeElement;
-    
-    // Se stiamo inizializzando, forzando lo scroll, o non c'è ancora la barra di scorrimento, blocca
-    if (!el || this.initializing || this.scrollingToBottom || el.scrollHeight <= el.clientHeight) return;
-
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    this.shouldScrollToBottom = distanceFromBottom < 100;
-
-    if (el.scrollTop <= 30 && !this.isLoadingHistory() && !this.allHistoryLoaded()) {
-      this.loadMoreHistory();
-    }
-  }
-
   private scrollToBottom() {
-    this.scrollingToBottom = true;
-    
-    // Aspettiamo che Angular aggiorni il DOM
-    setTimeout(() => {
-      const el = this.scrollContainer?.nativeElement;
-      if (el) el.scrollTop = el.scrollHeight;
-      
-      // Diamo tempo al browser di generare e farci ignorare l'evento di scroll nativo
-      setTimeout(() => {
-        this.scrollingToBottom = false;
-      }, 50);
-    }, 0);
+    this.viewport.scrollToIndex(this.logs().length, 'smooth');
   }
 
   // ─── Log Storici ───────────────────────────────────────────────
 
-  loadMoreHistory() {
-    this.isLoadingHistory.set(true);
-    this.shouldScrollToBottom = false;
+  async loadMoreHistory() {
+  this.isLoadingHistory.set(true);
 
-    const el = this.scrollContainer?.nativeElement;
-    const prevScrollHeight = el?.scrollHeight ?? 0;
-
-    this.subs.add(
-      this.consoleService.historyLogs(this.serverName, 30, this.historicalLogsLoaded).subscribe({
-        next: (logs) => {
-          if (logs.length === 0) {
-            this.allHistoryLoaded.set(true);
-          } else {
-            this.logs.set([...logs, ...this.logs()]);
-            this.historicalLogsLoaded += logs.length;
-            if (logs.length < 30) this.allHistoryLoaded.set(true);
-
-            setTimeout(() => {
-              if (el) el.scrollTop = el.scrollHeight - prevScrollHeight;
-            }, 0);
-          }
-          this.isLoadingHistory.set(false);
-        },
-        error: () => {
-          this.isLoadingHistory.set(false);
-        }
-      })
+    const logs = await firstValueFrom(
+      this.consoleService.historyLogs(this.serverName, 30, this.historicalLogsLoaded)
     );
-  }
+
+    if (logs.length === 0) {
+      this.allHistoryLoaded.set(true);
+    } else {
+      this.logs.set([...logs, ...this.logs()]);
+      this.historicalLogsLoaded += logs.length;
+      if (logs.length < 30) {
+        this.allHistoryLoaded.set(true);
+      }
+    }
+ 
+    this.isLoadingHistory.set(false);
+}
 
   // ─── SSE Logs ──────────────────────────────────────────────────
 
@@ -148,17 +140,9 @@ export class ServerDetail implements OnInit, OnDestroy {
         (data) => data
       ).subscribe(line => {
         this.logs.update(prev => [...prev, line]);
-
-        if (this.initializing) {
-          if (this.logs().length >= this.LOG_FIRST_LINES) {
-            this.initializing = false;
-            if (this.fallbackTimeout) clearTimeout(this.fallbackTimeout);
-            this.scrollToBottom();
-          }
-          return;
+        if(this.autoScrollEnabled) {
+          this.scrollToBottom();
         }
-
-        if (this.shouldScrollToBottom) this.scrollToBottom();
       })
     );
   }
@@ -178,20 +162,18 @@ export class ServerDetail implements OnInit, OnDestroy {
 
   // ─── Comandi ───────────────────────────────────────────────────
 
-  sendCommand() {
+  async sendCommand() {
     if (!this.command.trim()) return;
     const cmd = this.command;
-    this.command = '';
-    this.shouldScrollToBottom = true;
-    
-    // Forza lo scroll in basso appena l'utente invia il comando
+    this.command = '';    
+    await firstValueFrom(this.consoleService.executeCommand(this.serverName, cmd));
     this.scrollToBottom();
-    
-    this.consoleService.executeCommand(this.serverName, cmd).subscribe();
   }
 
   onCommandKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter') this.sendCommand();
+    if (event.key === 'Enter') {
+      this.sendCommand();
+    } 
   }
 
   // ─── Azioni ────────────────────────────────────────────────────

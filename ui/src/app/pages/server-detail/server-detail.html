@@ -97,11 +97,14 @@
     </div>
 
     <!-- cdkScrollable registra il div con ScrollDispatcher -->
-    <div class="console-body" #scrollContainer (scroll)="onScroll()">
-      @for (line of logs(); track $index) {
-        <div class="log-line" [ngClass]="getLogClass(line)">{{ line }}</div>
-      }
-    </div>
+     <cdk-virtual-scroll-viewport
+      class="console-body"
+      itemSize="19"
+      (scrolledIndexChange)="onScrolledIndexChange($event)">
+      <div *cdkVirtualFor="let line of logs();" class="log-line" [ngClass]="getLogClass(line)">
+        {{ line }}
+      </div>
+    </cdk-virtual-scroll-viewport>
 
     <div class="console-input">
       <span class="prompt">/</span>
