@@ -1,0 +1,11 @@
+<nav class="navbar">
+  <span class="brand">Server Panel</span>
+  <button mat-button (click)="logout()">
+    <mat-icon>logout</mat-icon>
+    Esci
+  </button>
+</nav>
+
+<main class="content">
+  <router-outlet />   <!-- ← qui vengono caricate le pagine figlie -->
+</main>

@@ -1,8 +1,8 @@
 package it.lorisdemicheli.minecraft_servers_controller.controller;
 
-import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -18,26 +18,29 @@ import it.lorisdemicheli.minecraft_servers_controller.security.JwtComponent;
 @Tag(name = "AUTH")
 public class AuthController {
 
-    @Autowired
-    private AuthenticationManager authenticationManager;
+  @Autowired
+  private AuthenticationManager authenticationManager;
 
-    @Autowired
-    private JwtComponent jwtUtil;
+  @Autowired
+  private JwtComponent jwtUtil;
 
-    @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        try {
-            Authentication auth = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.username(), request.password())
-            );
+  @PostMapping(path = "/login", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
+    try {
+      Authentication auth = authenticationManager.authenticate(
+          new UsernamePasswordAuthenticationToken(request.username(), request.password()));
 
-            String token = jwtUtil.generateToken(auth.getName());
-            return ResponseEntity.ok(Map.of("token", token));
+      String token = jwtUtil.generateToken(auth.getName());
+      return ResponseEntity.ok(new LoginResponse(token));
 
-        } catch (BadCredentialsException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Credenziali errate");
-        }
+    } catch (BadCredentialsException e) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
+  }
 
-    public record LoginRequest(String username, String password) {}
+  public record LoginRequest(String username, String password) {
+  }
+  
+  public record LoginResponse(String token) {
+  }
 }

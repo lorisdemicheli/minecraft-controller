@@ -1,0 +1,168 @@
+:host {
+  display: block;
+  height: 100vh;
+}
+
+.login-wrapper {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0e1a;
+  position: relative;
+  overflow: hidden;
+}
+
+// Griglia tecnica di sfondo
+.grid-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 200, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 200, 255, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 40%, #0a0e1a 100%);
+  }
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  padding: 48px 40px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 200, 255, 0.15);
+  border-radius: 2px;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 0 0 1px rgba(0, 200, 255, 0.05),
+    0 40px 80px rgba(0, 0, 0, 0.6);
+
+  animation: fadeIn 0.5s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.brand {
+  text-align: center;
+  margin-bottom: 40px;
+
+  .brand-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    background: rgba(0, 200, 255, 0.08);
+    border: 1px solid rgba(0, 200, 255, 0.3);
+    border-radius: 2px;
+    margin-bottom: 16px;
+
+    span {
+      font-size: 28px;
+      color: #00c8ff;
+    }
+  }
+
+  h1 {
+    font-family: 'Courier New', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #e8f4ff;
+    margin: 0 0 8px;
+  }
+
+  p {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.3);
+    margin: 0;
+  }
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  mat-form-field {
+    width: 100%;
+  }
+
+  // Override Angular Material per tema scuro
+  ::ng-deep {
+    .mat-mdc-form-field-flex { background: rgba(255,255,255,0.03) !important; }
+    .mdc-notched-outline__leading,
+    .mdc-notched-outline__notch,
+    .mdc-notched-outline__trailing {
+      border-color: rgba(0, 200, 255, 0.2) !important;
+    }
+    .mdc-text-field--focused .mdc-notched-outline__leading,
+    .mdc-text-field--focused .mdc-notched-outline__notch,
+    .mdc-text-field--focused .mdc-notched-outline__trailing {
+      border-color: #00c8ff !important;
+    }
+    .mat-mdc-input-element { color: #e8f4ff !important; }
+    .mat-mdc-floating-label { color: rgba(255,255,255,0.4) !important; }
+    .mat-icon { color: rgba(255,255,255,0.3) !important; }
+  }
+}
+
+.error-msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(255, 60, 60, 0.08);
+  border: 1px solid rgba(255, 60, 60, 0.25);
+  border-radius: 2px;
+  color: #ff6b6b;
+  font-size: 13px;
+
+  mat-icon { font-size: 16px; width: 16px; height: 16px; color: #ff6b6b !important; }
+}
+
+.submit-btn {
+  width: 100%;
+  height: 48px;
+  margin-top: 8px;
+  background: #00c8ff !important;
+  color: #0a0e1a !important;
+  font-family: 'Courier New', monospace !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  border-radius: 2px !important;
+  font-size: 13px !important;
+
+  &:disabled {
+    background: rgba(0, 200, 255, 0.2) !important;
+    color: rgba(255, 255, 255, 0.2) !important;
+  }
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(10, 14, 26, 0.3);
+  border-top-color: #0a0e1a;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

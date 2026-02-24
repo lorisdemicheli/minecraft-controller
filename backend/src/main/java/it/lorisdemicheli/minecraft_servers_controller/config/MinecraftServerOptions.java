@@ -10,8 +10,8 @@ import lombok.Setter;
 @Configuration
 @ConfigurationProperties(prefix = "it.lorisdemicheli.minecraft-servers")
 public class MinecraftServerOptions {
-  private String namespace = "minecraft-servers";
-  private String baseDomain = "lorisdemicheli.it";
+  private String namespace;
+  private String baseDomain;
   private String curseForgeApiKey; // Necessario per modpack CurseForge
 
   private MinecraftServerSecurityOptions security;
@@ -19,9 +19,9 @@ public class MinecraftServerOptions {
   @Getter
   @Setter
   public static class MinecraftServerSecurityOptions {
-    private String username = "admin";
+    private String username;
     private String password;
     private String jwtSecret;
-    private Long jwtExpirationMs = 86400000L;
+    private Long jwtExpirationMs;
   }
 }

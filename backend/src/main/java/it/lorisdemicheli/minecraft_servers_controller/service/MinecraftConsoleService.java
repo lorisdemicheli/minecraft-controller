@@ -24,6 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 public class MinecraftConsoleService {
 
   private static final String LOG_FILE = "/data/logs/latest.log";
+  private static final int LOG_FIRST_LINES = 50;
 
   private final ObjectMapper objectMapper;
   private final KubernetesAsyncService kubernetesService;
@@ -41,7 +42,7 @@ public class MinecraftConsoleService {
 
     if (!logStream.containsKey(key)) {
       Flux<String> newLog = kubernetesService.execStream(namespace, pod, container, //
-          new String[] {"tail", "-n", "10", "-f", LOG_FILE}) //
+          new String[] {"tail", "-n", Integer.toString(LOG_FIRST_LINES), "-f", LOG_FILE}) //
           .doFinally(signal -> {
             logStream.remove(key);
           }) //
@@ -51,7 +52,7 @@ public class MinecraftConsoleService {
       logStream.put(key, newLog);
       return newLog;
     } else {
-      return getLogs(namespace, pod, container, 10, 0) //
+      return getLogs(namespace, pod, container, LOG_FIRST_LINES, 0) //
           .flatMapIterable(list -> list) //
           .concatWith(logStream.get(key));
     }

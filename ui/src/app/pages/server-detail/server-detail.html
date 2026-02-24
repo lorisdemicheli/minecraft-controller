@@ -1,0 +1,121 @@
+<div class="detail-wrapper">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="server-icon">
+        @if (serverInfo()?.icon) {
+          <img [src]="serverInfo()!.icon" alt="icon" />
+        } @else {
+          <mat-icon>dns</mat-icon>
+        }
+      </div>
+      <div class="server-title">
+        <h1>{{ serverName }}</h1>
+        <div class="meta">
+          <span class="state-badge" [ngClass]="getStateClass()">
+            <span class="state-dot"></span>
+            {{ getStateLabel() }}
+          </span>
+          @if (serverInfo()?.version?.name) {
+            <span class="tag">{{ serverInfo()!.version!.name }}</span>
+          }
+          @if (serverInfo()?.population) {
+            <span class="tag">
+              {{ serverInfo()!.population!.online ?? 0 }}/{{ serverInfo()!.population!.max ?? 0 }} players
+            </span>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      @if (serverInfo()?.state === StateEnum.Stopped) {
+        <button mat-flat-button class="btn-start" (click)="start()">
+          <mat-icon>play_arrow</mat-icon> Start
+        </button>
+      }
+      @if (serverInfo()?.state === StateEnum.Running || serverInfo()?.state === StateEnum.Starting) {
+        <button mat-flat-button class="btn-stop" (click)="stop()">
+          <mat-icon>stop</mat-icon> Stop
+        </button>
+        <button mat-stroked-button class="btn-terminate" (click)="terminate()" matTooltip="Termina forzatamente">
+          <mat-icon>power_off</mat-icon>
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- Pannelli info -->
+  <div class="panels">
+    <div class="panel">
+      <div class="panel-title">Versione</div>
+      <div class="panel-rows">
+        <div class="panel-row">
+          <span>Nome</span>
+          <span>{{ serverInfo()?.version?.name ?? '—' }}</span>
+        </div>
+        <div class="panel-row">
+          <span>Protocollo</span>
+          <span>{{ serverInfo()?.version?.protocol ?? '—' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Giocatori</div>
+      <div class="panel-rows">
+        <div class="panel-row">
+          <span>Online</span>
+          <span>{{ serverInfo()?.population?.online ?? 0 }} / {{ serverInfo()?.population?.max ?? 0 }}</span>
+        </div>
+        @if (serverInfo()?.population?.players?.length) {
+          @for (player of serverInfo()!.population!.players!; track player.id) {
+            <div class="panel-row player">
+              <mat-icon>person</mat-icon>
+              <span>{{ player.name }}</span>
+            </div>
+          }
+        } @else {
+          <div class="panel-row muted">Nessun giocatore online</div>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Console -->
+  <div class="console-section">
+    <div class="console-header">
+      <mat-icon>terminal</mat-icon>
+      <span>Console</span>
+      @if (isLoadingHistory()) {
+        <span class="loading-badge">Caricamento...</span>
+      }
+      @if (allHistoryLoaded()) {
+        <span class="end-badge">Inizio log</span>
+      }
+    </div>
+
+    <!-- cdkScrollable registra il div con ScrollDispatcher -->
+    <div class="console-body" #scrollContainer (scroll)="onScroll()">
+      @for (line of logs(); track $index) {
+        <div class="log-line" [ngClass]="getLogClass(line)">{{ line }}</div>
+      }
+    </div>
+
+    <div class="console-input">
+      <span class="prompt">/</span>
+      <input
+        type="text"
+        [(ngModel)]="command"
+        (keydown)="onCommandKeydown($event)"
+        placeholder="Digita un comando..."
+        [disabled]="serverInfo()?.state !== StateEnum.Running"
+      />
+      <button mat-icon-button (click)="sendCommand()" [disabled]="serverInfo()?.state !== StateEnum.Running">
+        <mat-icon>send</mat-icon>
+      </button>
+    </div>
+  </div>
+
+</div>

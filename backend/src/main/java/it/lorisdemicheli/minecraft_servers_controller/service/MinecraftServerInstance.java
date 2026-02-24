@@ -328,7 +328,7 @@ public class MinecraftServerInstance {
         limit, //
         skip //
     ).subscribeOn(Schedulers.boundedElastic()) //
-        .block(Duration.ofSeconds(2));
+        .block(Duration.ofSeconds(5));
   }
 
   public Flux<String> getLogs(String serverName) {

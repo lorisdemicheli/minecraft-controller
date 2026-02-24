@@ -1,0 +1,25 @@
+# IDEs e Editor
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/
+.idea/
+
+# File generati da OpenAPI Generator
+# Spesso non si versionano perché vengono rigenerati dal comando
+/src/app/core/api-client/.openapi-generator/
+/src/app/core/api-client/.openapi-generator-ignore
+/src/app/core/api-client/git_push.sh
+
+# Dipendenze e Build (Standard Angular)
+/node_modules/
+/dist/
+/tmp/
+/out-tsc/
+/.angular/cache/
+
+# System files
+.DS_Store
+Thumbs.db

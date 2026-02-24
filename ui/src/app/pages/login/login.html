@@ -1,0 +1,59 @@
+<div class="login-wrapper">
+  <div class="grid-bg"></div>
+
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-icon">
+        <span class="material-symbols-outlined">dns</span>
+      </div>
+      <h1>Server Panel</h1>
+      <p>Accesso riservato agli amministratori</p>
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      <mat-form-field appearance="outline">
+        <mat-label>Username</mat-label>
+        <input matInput formControlName="username" autocomplete="username" />
+        <mat-icon matSuffix>person</mat-icon>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Password</mat-label>
+        <input
+          matInput
+          formControlName="password"
+          [type]="hidePassword ? 'password' : 'text'"
+          autocomplete="current-password"
+        />
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          (click)="hidePassword = !hidePassword"
+        >
+          <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+        </button>
+      </mat-form-field>
+
+      @if (error) {
+        <div class="error-msg">
+          <mat-icon>error_outline</mat-icon>
+          {{ error }}
+        </div>
+      }
+
+      <button
+        mat-flat-button
+        type="submit"
+        class="submit-btn"
+        [disabled]="form.invalid || loading"
+      >
+        @if (loading) {
+          <span class="spinner"></span>
+        } @else {
+          Accedi
+        }
+      </button>
+    </form>
+  </div>
+</div>

@@ -1,5 +1,6 @@
 package it.lorisdemicheli.minecraft_servers_controller.config;
 
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -11,6 +12,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
@@ -27,7 +31,8 @@ public class SecurityConfig {
 
   @Bean
   SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter) throws Exception {
-    http.csrf(csrf -> csrf.disable()) //
+    http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        .csrf(csrf -> csrf.disable()) //
         .formLogin(form -> form.disable()) //
         .httpBasic(basic -> basic.disable()) //
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -44,13 +49,27 @@ public class SecurityConfig {
         .info(new Info() //
             .title("API") //
             .version("1.0")) //
-        .addSecurityItem(new SecurityRequirement().addList("Bearer Auth")) //
+        .addSecurityItem(new SecurityRequirement().addList("bearer")) //
         .components(new Components() //
-            .addSecuritySchemes("Bearer Auth", new SecurityScheme() //
-                .name("Bearer Auth") //
+            .addSecuritySchemes("bearer", new SecurityScheme() //
+                .name("bearer") //
                 .type(SecurityScheme.Type.HTTP) //
                 .scheme("bearer") //
                 .bearerFormat("JWT")));
+  }
+
+  @Bean
+  CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration configuration = new CorsConfiguration();
+
+    configuration.setAllowedOrigins(List.of("http://localhost:4200"));
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+    configuration.setAllowedHeaders(List.of("*"));
+    configuration.setAllowCredentials(true);
+
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", configuration);
+    return source;
   }
 
   @Bean
