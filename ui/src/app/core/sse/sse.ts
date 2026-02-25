@@ -33,9 +33,6 @@ export class Sse {
             signal: abort.signal
           });
 
-          console.log('SSE connesso, status:', response.status);
-          console.log('SSE content-type:', response.headers.get('content-type'));
-
           if (!response.ok || !response.body) {
             throw new Error(`HTTP ${response.status}`);
           }

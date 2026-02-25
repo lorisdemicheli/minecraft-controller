@@ -13,24 +13,15 @@ import io.kubernetes.client.util.Config;
 
 @Configuration
 public class KubernetsConfig {
-  
-//  @Value("${kube.config.path}")
-//  private String kubeConfigPath;
 
   @Bean
-  ApiClient apiClient() throws IOException {
-    return Config.defaultClient();
-//    if(kubeConfigPath != null) {
-//      return Config.defaultClient();
-//    } else {
-//      return Config.fromConfig(kubeConfigPath);
-//    }
+  ApiClient apiClient(KubernetesClientConfig cfg) throws IOException {
+    if(cfg.getFile() == null) {
+      return Config.defaultClient();
+    } else {
+      return Config.fromConfig(cfg.getFile());
+    }
   }
-
-//  @Bean
-//  ApiClient apiClient() throws IOException {
-//    return Config.defaultClient();
-//  }
 
   @Bean
   CoreV1Api coreV1Api(ApiClient apiClient) {

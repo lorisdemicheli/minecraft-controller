@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.Strings;
 import org.springframework.core.io.Resource;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import io.kubernetes.client.custom.IntOrString;
 import io.kubernetes.client.custom.Quantity;
@@ -276,11 +277,11 @@ public class MinecraftServerInstance {
           serverName, //
           statefulSet //
       );
-    }).flatMap(v -> {
-      return explorerService.createExplorerPod( //
-          serverOptions.getNamespace(), //
-          serverName //
-      );
+//    }).flatMap(v -> {
+//      return explorerService.createExplorerPod( //
+//          serverOptions.getNamespace(), //
+//          serverName //
+//      );
     }).subscribeOn(Schedulers.boundedElastic()) //
         .block(Duration.ofSeconds(10));
   }
@@ -301,11 +302,11 @@ public class MinecraftServerInstance {
           serverOptions.getNamespace(), //
           getPodName(serverName) //
       );
-    }).flatMap(v -> {
-      return explorerService.createExplorerPod( //
-          serverOptions.getNamespace(), //
-          serverName //
-      );
+//    }).flatMap(v -> {
+//      return explorerService.createExplorerPod( //
+//          serverOptions.getNamespace(), //
+//          serverName //
+//      );
     }).subscribeOn(Schedulers.boundedElastic()) //
         .block(Duration.ofSeconds(10));
   }
@@ -348,8 +349,9 @@ public class MinecraftServerInstance {
         .block(Duration.ofSeconds(2));
   }
 
-  public Flux<ServerInstanceInfoDto> getStreamServerInfo(String serverName) {
+  public Flux<ServerSentEvent<ServerInstanceInfoDto>> getStreamServerInfo(String serverName) {
     return minecraftConsoleService.getStreamServerInfo( //
+        serverName, //
         serverOptions.getNamespace(), //
         getPodName(serverName), //
         CONTAINER_NAME //

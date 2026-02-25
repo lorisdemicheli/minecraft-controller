@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import it.lorisdemicheli.minecraft_servers_controller.domain.PlayerDto;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerDescriptionDto;
@@ -29,7 +30,7 @@ public class MinecraftConsoleService {
   private final ObjectMapper objectMapper;
   private final KubernetesAsyncService kubernetesService;
   private final Map<String, Flux<String>> logStream = new ConcurrentHashMap<>();
-  private final Map<String, Flux<ServerInstanceInfoDto>> infoStream = new ConcurrentHashMap<>();
+  private final Map<String, Flux<ServerSentEvent<ServerInstanceInfoDto>>> infoStream = new ConcurrentHashMap<>();
 
   public Mono<String> sendMinecraftCommand(String namespace, String pod, String container,
       String command) {
@@ -66,17 +67,49 @@ public class MinecraftConsoleService {
         .collectList();
   }
 
-  public Flux<ServerInstanceInfoDto> getStreamServerInfo(String namespace, String pod,
+  public Flux<ServerSentEvent<ServerInstanceInfoDto>> getStreamServerInfo(String serverName, String namespace, String pod,
       String container) {
+    ;
     return infoStream.computeIfAbsent(getKey(namespace, pod, container), //
-        k -> Flux.concat(Flux.just(0L), Flux.interval(Duration.ofSeconds(10)))
-            .flatMap(i -> getServerState(namespace, pod))
+        k -> Flux.interval(Duration.ZERO, Duration.ofSeconds(10))
+    .switchMap(i -> 
+        getServerState(namespace, pod)
             .flatMap(state -> getMonoServerInfo(namespace, pod, container, state))
-            .doFinally(signal -> {
-              infoStream.remove(getKey(namespace, pod, container));
-            }).replay(1) //
-            .refCount());
+            .onErrorResume(e -> {
+                return Mono.empty(); 
+            })
+    )
+    // 3. .map() invece di .flatMap() perché il builder crea un oggetto, non un Flux/Mono
+    .map(info -> ServerSentEvent.<ServerInstanceInfoDto>builder(info)
+        .event(serverName)
+        .build())
+    .doFinally(signal -> {
+        infoStream.remove(getKey(namespace, pod, container));
+    })
+    .replay(1)
+    .refCount());
   }
+//  public Flux<ServerSentEvent<ServerInstanceInfoDto>> getStreamServerInfo(
+//      String serverName, String namespace, String pod, String container) {
+//
+//      String key = getKey(namespace, pod, container);
+//
+//      return infoStream.computeIfAbsent(key, k -> 
+//          Flux.interval(Duration.ZERO, Duration.ofSeconds(10))
+//              .flatMap(i -> getServerState(namespace, pod))
+//              .flatMap(state -> getMonoServerInfo(pod, container, state))
+//              .map(info -> ServerSentEvent.<ServerInstanceInfoDto>builder(info)
+//                  .event(serverName)
+//                  .build())
+//              .doFinally(signal -> {
+//                  // Rimuoviamo dalla mappa solo quando il flusso termina davvero 
+//                  // o non ci sono più sottoscrittori
+//                  infoStream.remove(key);
+//              })
+//              .replay(1)
+//              .refCount()
+//      );
+//  }
 
   public Mono<ServerInstanceInfoDto> getServerInfo(String namespace, String pod, String container) {
     return getServerState(namespace, pod) //
