@@ -2,7 +2,6 @@ import {
   Component, OnInit, OnDestroy,
   ViewChild, ElementRef,
   inject, signal, PLATFORM_ID,
-  afterNextRender,
   effect,
   ChangeDetectionStrategy
 } from '@angular/core';
@@ -50,20 +49,19 @@ export class ServerDetail implements OnInit, OnDestroy {
   allHistoryLoaded = signal(false);
   command = '';
 
-  private readonly LOG_FIRST_LINES = 50;
-  private historicalLogsLoaded = this.LOG_FIRST_LINES;
+  private readonly HISTORY_LOAD_LINES = 50;
+  private historicalLogsLoaded = 0;
   private canScroll = false;
   private subs = new Subscription();
   private logSub = new Subscription();
-  private fallbackTimeout: any;
+  private firstBatch = true;
+  private autoScrollEnabled = false;
 
   readonly StateEnum = ServerInstanceInfoDto.StateEnum;
 
   @ViewChild(CdkVirtualScrollViewport)
   viewport!: CdkVirtualScrollViewport;
 
-  private firstBatch = true;
-  private autoScrollEnabled = false;
 
   constructor() {
     effect(() => {
@@ -107,9 +105,6 @@ export class ServerDetail implements OnInit, OnDestroy {
   ngOnDestroy() {
     this.subs.unsubscribe();
     this.logSub.unsubscribe();
-    if (this.fallbackTimeout) {
-      clearTimeout(this.fallbackTimeout);
-    }
   }
 
   // ─── Scroll ────────────────────────────────────────────────────
@@ -124,7 +119,7 @@ export class ServerDetail implements OnInit, OnDestroy {
     this.isLoadingHistory.set(true);
 
     const logs = await firstValueFrom(
-      this.consoleService.historyLogs(this.serverName, 30, this.historicalLogsLoaded)
+      this.consoleService.historyLogs(this.serverName, this.HISTORY_LOAD_LINES, this.historicalLogsLoaded)
     );
 
     if (logs.length === 0) {
@@ -132,7 +127,7 @@ export class ServerDetail implements OnInit, OnDestroy {
     } else {
       this.logs.set([...logs, ...this.logs()]);
       this.historicalLogsLoaded += logs.length;
-      if (logs.length < 30) {
+      if (logs.length < this.HISTORY_LOAD_LINES) {
         this.allHistoryLoaded.set(true);
       }
     }
@@ -158,7 +153,7 @@ export class ServerDetail implements OnInit, OnDestroy {
     this.logSub.unsubscribe();
     this.logSub = new Subscription();
     this.logs.set([]);
-    this.historicalLogsLoaded = this.LOG_FIRST_LINES;
+    this.historicalLogsLoaded = 0;
     this.allHistoryLoaded.set(false);
     this.firstBatch = true;
     this.autoScrollEnabled = false;

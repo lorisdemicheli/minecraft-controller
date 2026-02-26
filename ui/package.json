@@ -8,7 +8,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "serve:ssr:ui": "node dist/ui/server/server.mjs",
-    "openapi:generate": "openapi-generator-cli generate -i  http://localhost:8080/v3/api-docs -g typescript-angular -o src/app/core/api-client --additional-properties=ngVersion=21,providedInRoot=true,fileNaming=kebab-case"
+    "openapi:generate": "openapi-generator-cli generate -i  http://localhost:9696/v3/api-docs -g typescript-angular -o src/app/core/api-client --additional-properties=ngVersion=21,providedInRoot=true,fileNaming=kebab-case"
   },
   "prettier": {
     "printWidth": 100,

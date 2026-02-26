@@ -75,6 +75,11 @@ public class KubernetesFileSystemService {
     return kubernetesService.execCommand(namespace, pod, container,
         new String[] {"sh", "-c", "touch", path});
   }
+  
+  public Mono<String> content(String namespace, String pod, String container, String path) {
+	  return kubernetesService.execCommand(namespace, pod, container,
+		        new String[] {"cat", path});
+  }
 
   private boolean partsValid(String[] p) {
     return p.length == 4;

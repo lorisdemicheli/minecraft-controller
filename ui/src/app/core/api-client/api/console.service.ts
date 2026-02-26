@@ -171,9 +171,9 @@ export class CONSOLEService extends BaseService {
      * @param reportProgress flag to report request and response progress.
      * @param options additional options
      */
-    public getStreamServerInfo(serverName: string, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<Array<ServerInstanceInfoDto>>;
-    public getStreamServerInfo(serverName: string, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<ServerInstanceInfoDto>>>;
-    public getStreamServerInfo(serverName: string, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<ServerInstanceInfoDto>>>;
+    public getStreamServerInfo(serverName: string, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<Array<any>>;
+    public getStreamServerInfo(serverName: string, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<any>>>;
+    public getStreamServerInfo(serverName: string, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<any>>>;
     public getStreamServerInfo(serverName: string, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         if (serverName === null || serverName === undefined) {
             throw new Error('Required parameter serverName was null or undefined when calling getStreamServerInfo.');
@@ -209,7 +209,7 @@ export class CONSOLEService extends BaseService {
 
         let localVarPath = `/servers/${this.configuration.encodeParam({name: "serverName", value: serverName, in: "path", style: "simple", explode: false, dataType: "string", dataFormat: undefined})}/console/info/stream`;
         const { basePath, withCredentials } = this.configuration;
-        return this.httpClient.request<Array<ServerInstanceInfoDto>>('get', `${basePath}${localVarPath}`,
+        return this.httpClient.request<Array<any>>('get', `${basePath}${localVarPath}`,
             {
                 context: localVarHttpContext,
                 responseType: <any>responseType_,

@@ -19,9 +19,13 @@ export const routes: Routes = [
         path: 'servers/:id',
         loadComponent: () => import('./pages/server-detail/server-detail').then(m => m.ServerDetail)
       },
-
+      {
+        path: 'servers/:id/files',
+        loadComponent: () => import('./pages/server-file-detail/server-file-detail').then(m => m.ServerFileDetail)
+      },
       { path: '', redirectTo: 'servers', pathMatch: 'full' }
     ]
   },
+  
   { path: '**', redirectTo: '' }
 ];
