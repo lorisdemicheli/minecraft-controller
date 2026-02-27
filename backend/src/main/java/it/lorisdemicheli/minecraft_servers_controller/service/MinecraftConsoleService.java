@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import it.lorisdemicheli.minecraft_servers_controller.domain.PlayerDto;
@@ -54,7 +55,7 @@ public class MinecraftConsoleService {
       return newLog;
     } else {
       return getLogs(namespace, pod, container, LOG_FIRST_LINES, 0) //
-          .flatMapIterable(list -> list) //
+          .flatMapIterable(Function.identity()) //
           .concatWith(logStream.get(key));
     }
   }
@@ -65,6 +66,15 @@ public class MinecraftConsoleService {
     return kubernetesService
         .execStream(namespace, pod, container, new String[] {"sh", "-c", command}) //
         .collectList();
+  }
+  
+  public Flux<ServerSentEvent<ServerInstanceInfoDto>> getS(String namespace) {
+    kubernetesService.getNamespacePodsMetrics(namespace)
+        .flatMapIterable(Function.identity())
+        .flatMap(p-> {
+          return null;
+        });
+    return null;
   }
 
   public Flux<ServerSentEvent<ServerInstanceInfoDto>> getStreamServerInfo(String serverName, String namespace, String pod,

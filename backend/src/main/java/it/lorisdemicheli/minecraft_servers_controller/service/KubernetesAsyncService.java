@@ -6,6 +6,8 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.LineIterator;
 import org.springframework.stereotype.Service;
 import io.kubernetes.client.Exec;
+import io.kubernetes.client.Metrics;
+import io.kubernetes.client.custom.PodMetrics;
 import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.AppsV1Api;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
@@ -27,11 +29,18 @@ public class KubernetesAsyncService {
   private final Exec exec;
   private final AppsV1Api appsApi;
   private final CoreV1Api coreApi;
+  private final Metrics metrics;
   
   
 //  public Mono<V1Pod> getPodMetrics(String namespace, String pod) {
 //    coreApi.getpo
 //  }
+  
+  public Mono<List<PodMetrics>> getNamespacePodsMetrics(String namespace) {
+    return Mono.fromCallable(() -> {
+      return metrics.getPodMetrics(namespace).getItems();
+    });
+  }
   
 
   public Mono<V1Pod> getNamespacedPod(String namespace, String pod) {
