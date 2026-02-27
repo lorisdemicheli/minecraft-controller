@@ -1,1 +1,368 @@
-<p>server-list works!</p>
+<div class="list-wrapper">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="header-left">
+      <mat-icon>dns</mat-icon>
+      <div>
+        <h1>Server</h1>
+        <span class="subtitle">{{ servers().length }} istanze configurate</span>
+      </div>
+    </div>
+    <button class="create-btn" (click)="openWizard()">
+      <mat-icon>add</mat-icon>
+      <span>Nuovo server</span>
+    </button>
+  </div>
+
+  <!-- Lista -->
+  @if (loading()) {
+    <div class="loading-state">
+      <span class="loading-text">Caricamento...</span>
+    </div>
+  } @else if (servers().length === 0) {
+    <div class="empty-state">
+      <mat-icon>dns</mat-icon>
+      <span>Nessun server configurato</span>
+      <button class="create-btn-sm" (click)="openWizard()">
+        <mat-icon>add</mat-icon> Crea il primo
+      </button>
+    </div>
+  } @else {
+    <div class="servers-grid">
+      @for (server of servers(); track server.name) {
+        <div class="server-card" (click)="openServer(server.name!)">
+          <div class="card-top">
+            <div class="type-badge">
+              <mat-icon>{{ getTypeIcon(server.type) }}</mat-icon>
+              <span>{{ getTypeLabel(server.type) }}</span>
+            </div>
+            <div class="card-actions">
+              <button mat-icon-button class="action-btn"
+                (click)="openFiles(server.name!, $event)" matTooltip="File manager">
+                <mat-icon>folder_open</mat-icon>
+              </button>
+              <button mat-icon-button class="action-btn danger"
+                (click)="deleteTarget.set(server); $event.stopPropagation()" matTooltip="Elimina">
+                <mat-icon>delete</mat-icon>
+              </button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="server-name">{{ server.name }}</div>
+            @if (server.version) {
+              <div class="server-version">{{ server.version }}</div>
+            }
+          </div>
+          <div class="card-footer">
+            <div class="resource">
+              <mat-icon>memory</mat-icon>
+              <span>{{ formatMemory(server.memory ?? 0) }}</span>
+            </div>
+            <div class="resource">
+              <mat-icon>speed</mat-icon>
+              <span>{{ server.cpu ?? 0 }}m CPU</span>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<!-- Delete modal -->
+@if (deleteTarget()) {
+  <div class="modal-overlay" (click)="deleteTarget.set(null)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-title delete-title">
+        <mat-icon>delete_forever</mat-icon> Elimina server
+      </div>
+      <p class="modal-sub">
+        Eliminare <strong>{{ deleteTarget()?.name }}</strong>?
+        Tutti i file e i dati del server verranno rimossi.
+      </p>
+      <div class="modal-actions">
+        <button mat-flat-button class="delete-btn" (click)="confirmDelete()">Elimina</button>
+        <button mat-stroked-button (click)="deleteTarget.set(null)">Annulla</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Wizard -->
+@if (wizardOpen()) {
+  <div class="modal-overlay" (click)="closeWizard()">
+    <div class="wizard" (click)="$event.stopPropagation()">
+
+      <!-- Header -->
+      <div class="wizard-header">
+        <div class="wizard-title">
+          <mat-icon>add_circle</mat-icon>
+          <span>Nuovo server</span>
+        </div>
+        <div class="wizard-steps">
+          @for (s of [1,2,3,4]; track s) {
+            <div class="step" [class.active]="wizardStep() === s" [class.done]="wizardStep() > s">
+              <span class="step-num">{{ s }}</span>
+              <span class="step-label">
+                @if (s === 1) { Config }
+                @if (s === 2) { Risorse }
+                @if (s === 3) { Versione }
+                @if (s === 4) { Riepilogo }
+              </span>
+            </div>
+            @if (s < 4) { <div class="step-line"></div> }
+          }
+        </div>
+        <button mat-icon-button (click)="closeWizard()" [disabled]="creating()">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <!-- Step 1: Configurazione -->
+      @if (wizardStep() === 1) {
+        <div class="wizard-body">
+          <div class="field">
+            <label>Nome server</label>
+            <input type="text" class="field-input"
+              [ngModel]="newName()" (ngModelChange)="newName.set($event)"
+              placeholder="es. survival-1" />
+          </div>
+
+          <div class="field">
+            <label>Tipo</label>
+            <div class="type-grid">
+              @for (t of [TypeEnum.Vanilla, TypeEnum.Plugin, TypeEnum.Mod, TypeEnum.Modrinth, TypeEnum.Curseforge]; track t) {
+                <div class="type-option" [class.selected]="newType() === t" (click)="newType.set(t)">
+                  <mat-icon>{{ getTypeIcon(t) }}</mat-icon>
+                  <span>{{ getTypeLabel(t) }}</span>
+                </div>
+              }
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="eula-row" (click)="newEula.set(!newEula())">
+              <div class="checkbox" [class.checked]="newEula()">
+                @if (newEula()) { <mat-icon>check</mat-icon> }
+              </div>
+              <span>Accetto l'<a href="https://aka.ms/MinecraftEULA" target="_blank" (click)="$event.stopPropagation()">EULA di Minecraft</a></span>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Step 2: Risorse -->
+      @if (wizardStep() === 2) {
+        <div class="wizard-body">
+          <div class="field">
+            <label>CPU — <strong>{{ newCpu() }}m</strong></label>
+            <div class="slider-track">
+              <input type="range" [min]="200" [max]="2000" [step]="200"
+                [ngModel]="newCpu()" (ngModelChange)="newCpu.set(+$event)" />
+              <div class="slider-labels">
+                <span>200m</span><span>2000m</span>
+              </div>
+            </div>
+            <div class="resource-chips">
+              @for (v of CPU_VALUES; track v) {
+                <div class="chip" [class.selected]="newCpu() === v" (click)="newCpu.set(v)">{{ v }}m</div>
+              }
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Memoria — <strong>{{ formatMemory(newMemory()) }}</strong></label>
+            <div class="slider-track">
+              <input type="range" [min]="512" [max]="8192" [step]="256"
+                [ngModel]="newMemory()" (ngModelChange)="newMemory.set(+$event)" />
+              <div class="slider-labels">
+                <span>512 MB</span><span>8 GB</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Step 3: Versione -->
+      @if (wizardStep() === 3) {
+        <div class="wizard-body">
+
+          @if (newType() === TypeEnum.Vanilla || newType() === TypeEnum.Plugin || newType() === TypeEnum.Mod) {
+            <div class="field">
+              <label>Versione</label>
+              <input type="text" class="field-input"
+                [ngModel]="newVersion()" (ngModelChange)="newVersion.set($event)"
+                placeholder="es. 1.21.4" />
+              <span class="field-hint">Inserisci la versione esatta di Minecraft</span>
+            </div>
+          }
+
+          @if (newType() === TypeEnum.Modrinth) {
+            <div class="field">
+              <label>Cerca modpack su Modrinth</label>
+              <div class="search-row">
+                <input type="text" class="field-input"
+                  [ngModel]="modrinthQuery()" (ngModelChange)="modrinthQuery.set($event)"
+                  (keydown.enter)="searchModrinth()" placeholder="Es. All the Mods 9" />
+                <button class="search-btn" (click)="searchModrinth()" [disabled]="modrinthLoading()">
+                  <mat-icon>search</mat-icon>
+                </button>
+              </div>
+            </div>
+            @if (modrinthLoading()) { <div class="search-loading">Ricerca in corso...</div> }
+            @if (modrinthResults().length > 0) {
+              <div class="modpack-grid">
+                @for (hit of modrinthResults(); track hit.project_id) {
+                  <div class="modpack-card"
+                    [class.selected]="modrinthSelected()?.project_id === hit.project_id"
+                    (click)="modrinthSelected.set(hit)">
+                    @if (hit.icon_url) {
+                      <img [src]="hit.icon_url" class="modpack-icon" alt="" />
+                    } @else {
+                      <div class="modpack-icon-placeholder"><mat-icon>hub</mat-icon></div>
+                    }
+                    <div class="modpack-info">
+                      <div class="modpack-name">{{ hit.title }}</div>
+                      <div class="modpack-desc">{{ hit.description }}</div>
+                      <div class="modpack-meta">{{ hit.downloads | number }} download</div>
+                    </div>
+                    @if (modrinthSelected()?.project_id === hit.project_id) {
+                      <mat-icon class="modpack-check">check_circle</mat-icon>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          }
+
+          @if (newType() === TypeEnum.Curseforge) {
+            <div class="field">
+              <label>Cerca modpack su CurseForge</label>
+              <div class="search-row">
+                <input type="text" class="field-input"
+                  [ngModel]="curseforgeQuery()" (ngModelChange)="curseforgeQuery.set($event)"
+                  (keydown.enter)="searchCurseforge()" placeholder="Es. FTB Revelation" />
+                <button class="search-btn" (click)="searchCurseforge()" [disabled]="curseforgeLoading()">
+                  <mat-icon>search</mat-icon>
+                </button>
+              </div>
+            </div>
+            @if (curseforgeLoading()) { <div class="search-loading">Ricerca in corso...</div> }
+            @if (curseforgeResults().length > 0) {
+              <div class="modpack-grid">
+                @for (hit of curseforgeResults(); track hit.id) {
+                  <div class="modpack-card"
+                    [class.selected]="curseforgeSelected()?.id === hit.id"
+                    (click)="curseforgeSelected.set(hit)">
+                    @if (hit.logo?.url) {
+                      <img [src]="hit.logo!.url" class="modpack-icon" alt="" />
+                    } @else {
+                      <div class="modpack-icon-placeholder"><mat-icon>bolt</mat-icon></div>
+                    }
+                    <div class="modpack-info">
+                      <div class="modpack-name">{{ hit.name }}</div>
+                      <div class="modpack-desc">{{ hit.summary }}</div>
+                      <div class="modpack-meta">{{ hit.downloadCount | number }} download</div>
+                    </div>
+                    @if (curseforgeSelected()?.id === hit.id) {
+                      <mat-icon class="modpack-check">check_circle</mat-icon>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          }
+
+        </div>
+      }
+
+      <!-- Step 4: Riepilogo -->
+      @if (wizardStep() === 4) {
+        <div class="wizard-body">
+          <div class="recap">
+
+            <!-- Icona modpack se presente -->
+            @if (getRecapIcon()) {
+              <div class="recap-icon-wrap">
+                <img [src]="getRecapIcon()" class="recap-icon" alt="" />
+              </div>
+            } @else {
+              <div class="recap-icon-wrap placeholder">
+                <mat-icon>{{ getTypeIcon(newType()) }}</mat-icon>
+              </div>
+            }
+
+            <div class="recap-name">{{ newName() }}</div>
+            <div class="recap-type-badge">
+              <mat-icon>{{ getTypeIcon(newType()) }}</mat-icon>
+              {{ getTypeLabel(newType()) }}
+            </div>
+
+            <div class="recap-rows">
+              <div class="recap-row">
+                <span class="recap-label">Versione / Modpack</span>
+                <span class="recap-value">{{ getRecapVersion() }}</span>
+              </div>
+              <div class="recap-row">
+                <span class="recap-label">CPU</span>
+                <span class="recap-value">{{ newCpu() }}m</span>
+              </div>
+              <div class="recap-row">
+                <span class="recap-label">Memoria</span>
+                <span class="recap-value">{{ formatMemory(newMemory()) }}</span>
+              </div>
+              <div class="recap-row">
+                <span class="recap-label">EULA</span>
+                <span class="recap-value eula-ok">✓ Accettata</span>
+              </div>
+            </div>
+
+            @if (creating()) {
+              <div class="creating-state">
+                <div class="creating-spinner"></div>
+                <span>Creazione in corso...</span>
+              </div>
+            }
+
+          </div>
+        </div>
+      }
+
+      <!-- Footer -->
+      <div class="wizard-footer">
+        @if (wizardStep() > 1 && !creating()) {
+          <button mat-stroked-button (click)="prevStep()">
+            <mat-icon>arrow_back</mat-icon> Indietro
+          </button>
+        } @else {
+          <div></div>
+        }
+
+        @if (wizardStep() < 3) {
+          <button mat-flat-button class="next-btn"
+            (click)="nextStep()"
+            [disabled]="wizardStep() === 1 && !canProceedStep1()">
+            Avanti <mat-icon>arrow_forward</mat-icon>
+          </button>
+        } @else if (wizardStep() === 3) {
+          <button mat-flat-button class="next-btn"
+            (click)="nextStep()"
+            [disabled]="!canProceedStep3()">
+            Riepilogo <mat-icon>arrow_forward</mat-icon>
+          </button>
+        } @else {
+          <button mat-flat-button class="create-confirm-btn"
+            (click)="create()" [disabled]="creating()">
+            @if (creating()) {
+              <span>Creazione...</span>
+            } @else {
+              <ng-container><mat-icon>rocket_launch</mat-icon> Crea server</ng-container>
+            }
+          </button>
+        }
+      </div>
+
+    </div>
+  </div>
+}
