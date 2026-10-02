@@ -1,0 +1,25 @@
+-----------------------------------------------------------------------
+ minecraft-controller {{ .Chart.AppVersion }} deployed
+-----------------------------------------------------------------------
+{{- $base := include "minecraft-controller.baseDomain" . }}
+{{- $scheme := ternary "https" "http" .Values.ingress.tls.enabled }}
+
+Web console : {{ $scheme }}://console.{{ $base }}
+Backend API : {{ $scheme }}://api.{{ $base }}  (Swagger: /swagger-ui/index.html)
+Servers in  : namespace "{{ include "minecraft-controller.serversNamespace" . }}"
+
+ADMIN CREDENTIALS
+-----------------
+Username: {{ .Values.auth.username }}
+Password: kubectl get secret {{ include "minecraft-controller.secretName" . }} -n {{ .Release.Namespace }} -o jsonpath='{.data.password}' | base64 -d; echo
+
+DNS SETUP
+---------
+1. *.{{ $base }}        -> external IP of Service "{{ include "minecraft-controller.fullname" . }}-router" (Minecraft traffic, TCP {{ .Values.router.service.port }})
+   kubectl get svc {{ include "minecraft-controller.fullname" . }}-router -n {{ .Release.Namespace }}
+2. console.{{ $base }}  -> your Ingress controller IP (web traffic)
+3. api.{{ $base }}      -> your Ingress controller IP (API traffic)
+   (specific records for console/api take precedence over the wildcard)
+
+Reserved names: do not create Minecraft servers named "console" or "api".
+-----------------------------------------------------------------------

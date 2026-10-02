@@ -1,18 +1,114 @@
-# [MANDATORY] Base domain for the platform (e.g., example.com)
-# The installation will fail if this is left empty.
+# -- [REQUIRED] Base domain of the platform (e.g. example.com).
+# The console is served on console.<baseDomain>, the API on api.<baseDomain>
+# and every Minecraft server on <server-name>.<baseDomain>.
+# The installation fails if this is left empty.
 baseDomain: ""
 
-# Backend Configuration (Java Minecraft Controller)
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Pull secrets for the images below.
+imagePullSecrets: []
+
+servers:
+  # -- Namespace where the controller creates the Minecraft servers
+  # (StatefulSets, Services, PVCs). Empty = release namespace.
+  # If different from the release namespace it MUST already exist.
+  # NOTE: uninstalling the chart never deletes servers or their worlds (PVCs).
+  namespace: ""
+
+auth:
+  # -- Username of the single admin account.
+  username: admin
+  # -- Use an existing Secret instead of generating one.
+  # Required keys: `password`, `jwt-secret`. Optional key: `curseforge-api-key`.
+  # Recommended with GitOps (Argo CD, Flux, `helm template`): the auto-generated
+  # credentials rely on `lookup`, which returns nothing in those flows and would
+  # rotate the password on every render.
+  existingSecret: ""
+  # -- JWT lifetime in milliseconds (default 24h).
+  jwtExpirationMs: 86400000
+  # -- CurseForge API key, needed only for CurseForge modpacks.
+  # Ignored when existingSecret is set.
+  curseForgeApiKey: ""
+
+rbac:
+  # -- Create Roles/RoleBindings for the controller and the router.
+  create: true
+
+# Backend (Spring Boot, port 8080)
 controller:
-  image: "lorisdemicheli/minecraft-controller:latest"
+  image:
+    repository: lorisdemicheli/minecraft-controller
+    tag: latest
+    pullPolicy: Always
   replicas: 1
+  port: 8080
+  resources: {}
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
-# Frontend Configuration (React Console)
+# Web console (Angular SSR / Node, port 4000).
+# NOTE: the API URL is compiled into the bundle (src/environments/*.ts);
+# the image must be built with apiBasePath = http://api.<baseDomain>.
 frontend:
-  image: "lorisdemicheli/minecraft-console:latest"
+  enabled: true
+  image:
+    repository: lorisdemicheli/minecraft-console
+    tag: latest
+    pullPolicy: Always
   replicas: 1
+  port: 4000
+  resources: {}
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
-# Proxy Configuration (Gate Minecraft Proxy)
-gate:
-  image: "minekube/gate:latest"
+# itzg/mc-router: routes <server>.<baseDomain> to the right server Service,
+# discovered through the `mc-router.itzg.me/externalServerName` annotation
+# that the controller puts on each server Service.
+router:
+  image:
+    repository: itzg/mc-router
+    tag: latest
+    pullPolicy: Always
   replicas: 1
+  autoScale:
+    # -- Start a stopped server (replicas 0 -> 1) when a player connects.
+    up: false
+    # -- Stop a server (replicas 1 -> 0) when it is empty.
+    down: false
+  service:
+    type: LoadBalancer
+    port: 25565
+    # -- Fixed nodePort (only for NodePort / LoadBalancer types).
+    nodePort: null
+    # -- Set to `Local` to preserve client source IPs.
+    externalTrafficPolicy: ""
+    annotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+ingress:
+  enabled: true
+  className: nginx
+  # -- Extra annotations for both Ingresses (e.g. cert-manager issuer).
+  annotations: {}
+  tls:
+    enabled: false
+    # -- Secret holding the certificate. Empty = <fullname>-tls
+    # (a wildcard cert or cert-manager must provide it).
+    secretName: ""
+  api:
+    # -- Extra annotations only for the API Ingress. Defaults are the ingress-nginx
+    # settings needed for SSE (console/log streams) and large file uploads.
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-buffering: "off"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-body-size: "512m"

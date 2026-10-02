@@ -1,0 +1,2 @@
+# Used by `helm lint -f ci/test-values.yaml` / `helm template -f ci/test-values.yaml`
+baseDomain: example.test

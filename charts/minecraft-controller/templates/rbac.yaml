@@ -1,26 +1,98 @@
+{{- $fullname := include "minecraft-controller.fullname" . -}}
+{{- $serversNs := include "minecraft-controller.serversNamespace" . -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "minecraft-controller.fullname" . }}-sa
+  name: {{ $fullname }}-controller
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: {{ include "minecraft-controller.fullname" . }}-role
+  name: {{ $fullname }}-router
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+{{- if .Values.rbac.create }}
+---
+# Controller: manages server StatefulSets/Services/PVCs, runs exec (console, files), reads logs and metrics.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}-controller
+  namespace: {{ $serversNs }}
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
 rules:
-  - apiGroups: ["", "apps", "networking.k8s.io"]
-    resources: ["deployments", "services", "pods", "endpoints", "persistentvolumeclaims", "ingresses"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: {{ include "minecraft-controller.fullname" . }}-binding
+  name: {{ $fullname }}-controller
+  namespace: {{ $serversNs }}
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "minecraft-controller.fullname" . }}-sa
+    name: {{ $fullname }}-controller
     namespace: {{ .Release.Namespace }}
 roleRef:
-  kind: ClusterRole
-  name: {{ include "minecraft-controller.fullname" . }}-role
+  kind: Role
+  name: {{ $fullname }}-controller
   apiGroup: rbac.authorization.k8s.io
+---
+# Router: discovers server Services (and optionally scales StatefulSets).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}-router
+  namespace: {{ $serversNs }}
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  {{- if or .Values.router.autoScale.up .Values.router.autoScale.down }}
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets/scale"]
+    verbs: ["get", "update", "patch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-router
+  namespace: {{ $serversNs }}
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $fullname }}-router
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ $fullname }}-router
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

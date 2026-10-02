@@ -1,0 +1,107 @@
+{{- $fullname := include "minecraft-controller.fullname" . -}}
+{{- $secret := include "minecraft-controller.secretName" . -}}
+{{- $sel := dict "ctx" . "component" "controller" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-controller
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      {{- include "minecraft-controller.selectorLabels" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "minecraft-controller.selectorLabels" $sel | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $fullname }}-controller
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: controller
+          image: {{ include "minecraft-controller.image" .Values.controller.image | quote }}
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.controller.port }}
+          env:
+            # Spring Boot relaxed binding of it.lorisdemicheli.minecraft-servers.*
+            - name: SERVER_PORT
+              value: {{ .Values.controller.port | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_NAMESPACE
+              value: {{ include "minecraft-controller.serversNamespace" . | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_BASEDOMAIN
+              value: {{ include "minecraft-controller.baseDomain" . | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_USERNAME
+              value: {{ .Values.auth.username | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_JWTEXPIRATIONMS
+              value: {{ .Values.auth.jwtExpirationMs | int64 | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: password
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_JWTSECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: jwt-secret
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_CURSEFORGEAPIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: curseforge-api-key
+                  optional: true
+            {{- with .Values.controller.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          {{- with .Values.controller.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-controller
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  selector:
+    {{- include "minecraft-controller.selectorLabels" $sel | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.controller.port }}
+      targetPort: http

@@ -1,30 +1,73 @@
+{{- if .Values.ingress.enabled }}
+{{- $fullname := include "minecraft-controller.fullname" . -}}
+{{- $base := include "minecraft-controller.baseDomain" . -}}
+{{- $tlsSecret := default (printf "%s-tls" $fullname) .Values.ingress.tls.secretName -}}
+{{- if .Values.frontend.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: minecraft-ingress
+  name: {{ $fullname }}-console
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: console
+  {{- with .Values.ingress.annotations }}
   annotations:
-    kubernetes.io/ingress.class: nginx
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - secretName: {{ $tlsSecret }}
+      hosts:
+        - console.{{ $base }}
+  {{- end }}
   rules:
-    # Route for the React Frontend
-    - host: console.{{ include "minecraft-controller.baseDomain" . }}
+    - host: console.{{ $base }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: minecraft-console-svc
+                name: {{ $fullname }}-console
                 port:
                   number: 80
-    # Route for the Java Backend (API)
-    - host: api.{{ include "minecraft-controller.baseDomain" . }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-api
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+  {{- $annotations := merge (dict) .Values.ingress.api.annotations .Values.ingress.annotations }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - secretName: {{ $tlsSecret }}
+      hosts:
+        - api.{{ $base }}
+  {{- end }}
+  rules:
+    - host: api.{{ $base }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: minecraft-controller-svc
+                name: {{ $fullname }}-controller
                 port:
-                  number: 8080
+                  number: {{ .Values.controller.port }}
+{{- end }}

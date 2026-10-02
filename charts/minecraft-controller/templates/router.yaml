@@ -1,0 +1,93 @@
+{{- $fullname := include "minecraft-controller.fullname" . -}}
+{{- $sel := dict "ctx" . "component" "router" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-router
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+spec:
+  replicas: {{ .Values.router.replicas }}
+  selector:
+    matchLabels:
+      {{- include "minecraft-controller.selectorLabels" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "minecraft-controller.selectorLabels" $sel | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $fullname }}-router
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mc-router
+          image: {{ include "minecraft-controller.image" .Values.router.image | quote }}
+          imagePullPolicy: {{ .Values.router.image.pullPolicy }}
+          args:
+            - --in-kube-cluster
+            {{- if .Values.router.autoScale.up }}
+            - --auto-scale-up
+            {{- end }}
+            {{- if .Values.router.autoScale.down }}
+            - --auto-scale-down
+            {{- end }}
+          env:
+            # Watch only the namespace where the servers live.
+            - name: KUBE_NAMESPACE
+              value: {{ include "minecraft-controller.serversNamespace" . | quote }}
+          ports:
+            - name: minecraft
+              containerPort: 25565
+          readinessProbe:
+            tcpSocket:
+              port: minecraft
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: minecraft
+            periodSeconds: 20
+          {{- with .Values.router.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.router.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.router.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.router.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-router
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+  {{- with .Values.router.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.router.service.type }}
+  {{- if .Values.router.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.router.service.externalTrafficPolicy }}
+  {{- end }}
+  selector:
+    {{- include "minecraft-controller.selectorLabels" $sel | nindent 4 }}
+  ports:
+    - name: minecraft
+      port: {{ .Values.router.service.port }}
+      targetPort: minecraft
+      {{- if and .Values.router.service.nodePort (ne .Values.router.service.type "ClusterIP") }}
+      nodePort: {{ .Values.router.service.nodePort }}
+      {{- end }}
