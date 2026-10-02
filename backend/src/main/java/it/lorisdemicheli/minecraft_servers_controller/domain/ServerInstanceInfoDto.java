@@ -9,8 +9,10 @@ import lombok.Setter;
 @RequiredArgsConstructor
 public class ServerInstanceInfoDto {
   private final ServerState state;
-  private Long cpu;
-  private Long memoty;
+  private Long cpuUsage;
+  private Long memoryUsage;
+  private Long maxCpu;
+  private Long maxMemory;
   private ServerVersionDto version;
   private ServerPopulationDto population;
   private ServerDescriptionDto description;

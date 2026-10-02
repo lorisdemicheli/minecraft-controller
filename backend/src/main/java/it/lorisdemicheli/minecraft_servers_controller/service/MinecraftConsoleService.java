@@ -7,6 +7,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
+import io.kubernetes.client.custom.ContainerMetrics;
+import io.kubernetes.client.custom.Quantity;
+import io.kubernetes.client.custom.QuantityFormatter;
 import it.lorisdemicheli.minecraft_servers_controller.domain.PlayerDto;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerDescriptionDto;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceInfoDto;
@@ -31,7 +34,8 @@ public class MinecraftConsoleService {
   private final ObjectMapper objectMapper;
   private final KubernetesAsyncService kubernetesService;
   private final Map<String, Flux<String>> logStream = new ConcurrentHashMap<>();
-  private final Map<String, Flux<ServerSentEvent<ServerInstanceInfoDto>>> infoStream = new ConcurrentHashMap<>();
+  private final Map<String, Flux<ServerSentEvent<ServerInstanceInfoDto>>> infoStream =
+      new ConcurrentHashMap<>();
 
   public Mono<String> sendMinecraftCommand(String namespace, String pod, String container,
       String command) {
@@ -67,63 +71,67 @@ public class MinecraftConsoleService {
         .execStream(namespace, pod, container, new String[] {"sh", "-c", command}) //
         .collectList();
   }
-  
-  public Flux<ServerSentEvent<ServerInstanceInfoDto>> getS(String namespace) {
-    kubernetesService.getNamespacePodsMetrics(namespace)
-        .flatMapIterable(Function.identity())
-        .flatMap(p-> {
-          return null;
-        });
-    return null;
-  }
 
-  public Flux<ServerSentEvent<ServerInstanceInfoDto>> getStreamServerInfo(String serverName, String namespace, String pod,
-      String container) {
+  // public Flux<ServerSentEvent<ServerInstanceInfoDto>> getS(String namespace) {
+  // Flux.interval(Duration.ZERO, Duration.ofSeconds(10))
+  // .flatMap(null)
+  // kubernetesService.getNamespacePodsMetrics(namespace)
+  // .flatMapIterable(Function.identity())
+  // .flatMap(p-> {
+  // return null;
+  // });
+  // return null;
+  // }
+
+  public Flux<ServerSentEvent<ServerInstanceInfoDto>> getStreamServerInfo(String serverName,
+      String namespace, String pod, String container) {
     ;
     return infoStream.computeIfAbsent(getKey(namespace, pod, container), //
         k -> Flux.interval(Duration.ZERO, Duration.ofSeconds(10))
-    .switchMap(i -> 
-        getServerState(namespace, pod)
-            .flatMap(state -> getMonoServerInfo(namespace, pod, container, state))
-            .onErrorResume(e -> {
-                return Mono.empty(); 
-            })
-    )
-    // 3. .map() invece di .flatMap() perché il builder crea un oggetto, non un Flux/Mono
-    .map(info -> ServerSentEvent.<ServerInstanceInfoDto>builder(info)
-        .event(serverName)
-        .build())
-    .doFinally(signal -> {
-        infoStream.remove(getKey(namespace, pod, container));
-    })
-    .replay(1)
-    .refCount());
+            .switchMap(i -> getServerState(namespace, pod)
+                .flatMap(state -> getMonoServerInfo(namespace, pod, container, state))
+                .onErrorResume(e -> {
+                  return Mono.empty();
+                }))
+            // 3. .map() invece di .flatMap() perché il builder crea un oggetto, non un Flux/Mono
+            .map(info -> ServerSentEvent.<ServerInstanceInfoDto>builder(info).event(serverName)
+                .build())
+            .doFinally(signal -> {
+              infoStream.remove(getKey(namespace, pod, container));
+            }).replay(1).refCount());
   }
-//  public Flux<ServerSentEvent<ServerInstanceInfoDto>> getStreamServerInfo(
-//      String serverName, String namespace, String pod, String container) {
-//
-//      String key = getKey(namespace, pod, container);
-//
-//      return infoStream.computeIfAbsent(key, k -> 
-//          Flux.interval(Duration.ZERO, Duration.ofSeconds(10))
-//              .flatMap(i -> getServerState(namespace, pod))
-//              .flatMap(state -> getMonoServerInfo(pod, container, state))
-//              .map(info -> ServerSentEvent.<ServerInstanceInfoDto>builder(info)
-//                  .event(serverName)
-//                  .build())
-//              .doFinally(signal -> {
-//                  // Rimuoviamo dalla mappa solo quando il flusso termina davvero 
-//                  // o non ci sono più sottoscrittori
-//                  infoStream.remove(key);
-//              })
-//              .replay(1)
-//              .refCount()
-//      );
-//  }
+  // public Flux<ServerSentEvent<ServerInstanceInfoDto>> getStreamServerInfo(
+  // String serverName, String namespace, String pod, String container) {
+  //
+  // String key = getKey(namespace, pod, container);
+  //
+  // return infoStream.computeIfAbsent(key, k ->
+  // Flux.interval(Duration.ZERO, Duration.ofSeconds(10))
+  // .flatMap(i -> getServerState(namespace, pod))
+  // .flatMap(state -> getMonoServerInfo(pod, container, state))
+  // .map(info -> ServerSentEvent.<ServerInstanceInfoDto>builder(info)
+  // .event(serverName)
+  // .build())
+  // .doFinally(signal -> {
+  // // Rimuoviamo dalla mappa solo quando il flusso termina davvero
+  // // o non ci sono più sottoscrittori
+  // infoStream.remove(key);
+  // })
+  // .replay(1)
+  // .refCount()
+  // );
+  // }
 
   public Mono<ServerInstanceInfoDto> getServerInfo(String namespace, String pod, String container) {
-    return getServerState(namespace, pod) //
-        .flatMap(state -> getMonoServerInfo(namespace, pod, container, state));
+    return getServerState(namespace, pod)
+        .flatMap(state -> getMonoServerInfo(namespace, pod, container, state)).flatMap(
+            serverInfo -> kubernetesService.getNamespacePodMetrics(namespace, pod).map(metrics -> {
+              ContainerMetrics cm = metrics.getContainers().get(0);
+              cm.getUsage();
+              serverInfo.setCpuUsage(metrics.getContainers());
+              serverInfo.setMemoryUsage(/* metrics.getContainers()... */);
+              return serverInfo;
+            }));
   }
 
   private Mono<ServerState> getServerState(String namespace, String podName) {
@@ -185,6 +193,16 @@ public class MinecraftConsoleService {
 
   private String getKey(String namespace, String pod, String container) {
     return String.format("%s-%s-%s", namespace, pod, container);
+  }
+  
+  private Long cpuUsage(Map<String, Quantity> usage) {
+    QuantityFormatter.class
+    return usage.get("memory");
+  }
+  
+  private Long memoryUsage(Map<String, Quantity> usage) {
+    ContainerMetrics cm = metrics.getContainers().get(0);
+    cm.getUsage().
   }
 
 }

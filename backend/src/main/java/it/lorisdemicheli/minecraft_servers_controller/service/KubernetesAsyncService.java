@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import io.kubernetes.client.Exec;
 import io.kubernetes.client.Metrics;
 import io.kubernetes.client.custom.PodMetrics;
+import io.kubernetes.client.custom.PodMetricsList;
+import io.kubernetes.client.openapi.ApiClient;
 import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.AppsV1Api;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
@@ -16,6 +18,7 @@ import io.kubernetes.client.openapi.models.V1Pod;
 import io.kubernetes.client.openapi.models.V1Service;
 import io.kubernetes.client.openapi.models.V1StatefulSet;
 import io.kubernetes.client.openapi.models.V1Status;
+import io.kubernetes.client.util.generic.GenericKubernetesApi;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceAlreadyExistsException;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +30,7 @@ import reactor.core.publisher.Mono;
 public class KubernetesAsyncService {
 
   private final Exec exec;
+  private final ApiClient apiClient;
   private final AppsV1Api appsApi;
   private final CoreV1Api coreApi;
   private final Metrics metrics;
@@ -36,10 +40,19 @@ public class KubernetesAsyncService {
 //    coreApi.getpo
 //  }
   
+  public Mono<PodMetrics> getNamespacePodMetrics(String namespace, String pod) {
+    return Mono.fromCallable(() -> {
+      GenericKubernetesApi<PodMetrics, PodMetricsList> metricsClient =
+          new GenericKubernetesApi<>(
+              PodMetrics.class, PodMetricsList.class, "metrics.k8s.io", "v1beta1", "pods", apiClient);
+      return metricsClient.get(namespace, pod).throwsApiException().getObject();
+    }).onErrorMap(this::errorMapper);
+  }
+  
   public Mono<List<PodMetrics>> getNamespacePodsMetrics(String namespace) {
     return Mono.fromCallable(() -> {
       return metrics.getPodMetrics(namespace).getItems();
-    });
+    }).onErrorMap(this::errorMapper);
   }
   
 
