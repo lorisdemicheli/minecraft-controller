@@ -1,15 +1,9 @@
 package it.lorisdemicheli.minecraft_servers_controller.config;
 
 import java.io.IOException;
-
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import io.kubernetes.client.Copy;
 import io.kubernetes.client.Exec;
-import io.kubernetes.client.Metrics;
 import io.kubernetes.client.openapi.ApiClient;
 import io.kubernetes.client.openapi.apis.AppsV1Api;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
@@ -38,23 +32,7 @@ public class KubernetsConfig {
   }
 
   @Bean
-  Copy copy(ApiClient apiClient) {
-    return new Copy(apiClient);
-  }
-
-  @Bean
   Exec exec(ApiClient apiClient) {
     return new Exec(apiClient);
   }
-
-  @Bean
-  Metrics metrics(ApiClient apiClient) {
-    return new Metrics(apiClient);
-  }
-
-  @Bean
-  ObjectMapper objectMapper() {
-    return new ObjectMapper();
-  }
-
 }

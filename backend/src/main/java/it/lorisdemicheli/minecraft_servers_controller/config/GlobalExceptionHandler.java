@@ -11,7 +11,9 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ConflictException;
+import it.lorisdemicheli.minecraft_servers_controller.exception.InvalidRequestException;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceAlreadyExistsException;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceNotFoundException;
 import lombok.extern.slf4j.Slf4j;
@@ -21,23 +23,23 @@ import lombok.extern.slf4j.Slf4j;
 public class GlobalExceptionHandler {
 
   @ExceptionHandler({ResourceAlreadyExistsException.class, ConflictException.class})
-  public ResponseEntity<Object> handleConflict(Exception ex) {
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("timestamp", LocalDateTime.now());
-    body.put("status", HttpStatus.CONFLICT.value());
-    body.put("error", "Conflict");
-
-    return new ResponseEntity<>(body, HttpStatus.CONFLICT);
+  public ResponseEntity<Object> handleConflict(RuntimeException ex) {
+    return error(HttpStatus.CONFLICT, ex);
   }
 
   @ExceptionHandler(ResourceNotFoundException.class)
   public ResponseEntity<Object> handleNotFound(ResourceNotFoundException ex) {
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("timestamp", LocalDateTime.now());
-    body.put("status", HttpStatus.NOT_FOUND.value());
-    body.put("error", "Not Found");
+    return error(HttpStatus.NOT_FOUND, ex);
+  }
 
-    return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
+  @ExceptionHandler(InvalidRequestException.class)
+  public ResponseEntity<Object> handleInvalidRequest(InvalidRequestException ex) {
+    return error(HttpStatus.BAD_REQUEST, ex);
+  }
+
+  @ExceptionHandler(MaxUploadSizeExceededException.class)
+  public ResponseEntity<Object> handleTooLarge(MaxUploadSizeExceededException ex) {
+    return error(HttpStatus.valueOf(413), ex);
   }
 
   @ExceptionHandler(Exception.class)
@@ -47,8 +49,8 @@ public class GlobalExceptionHandler {
       return null; // Spring ignorerà la risposta
     }
     log.error("Errore interno: ", ex);
-    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-        .body(Map.of("error", "Errore interno del server", "message", ex.getMessage()));
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+        Map.of("error", "Errore interno del server", "message", String.valueOf(ex.getMessage())));
   }
 
   @ExceptionHandler(BadCredentialsException.class)
@@ -60,6 +62,17 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(AccessDeniedException.class)
   public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException ex) {
     return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Accesso negato"));
+  }
+
+  private static ResponseEntity<Object> error(HttpStatus status, Exception ex) {
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("timestamp", LocalDateTime.now());
+    body.put("status", status.value());
+    body.put("error", status.getReasonPhrase());
+    if (ex.getMessage() != null) {
+      body.put("message", ex.getMessage());
+    }
+    return new ResponseEntity<>(body, status);
   }
 
   private boolean isClientDisconnectException(Throwable ex) {

@@ -6,7 +6,18 @@
 
 Web console : {{ $scheme }}://console.{{ $base }}
 Backend API : {{ $scheme }}://api.{{ $base }}  (Swagger: /swagger-ui/index.html)
-Servers in  : namespace "{{ include "minecraft-controller.serversNamespace" . }}"
+Servers in  : namespace "{{ .Release.Namespace }}"
+
+DATA VOLUME
+-----------
+All servers share ONE volume (PVC "{{ include "minecraft-controller.claimName" . }}", {{ .Values.storage.accessMode }},
+{{ .Values.storage.size }}), one folder per server. It is kept on `helm uninstall`.
+Deleted servers stay in <volume>/.trash for {{ .Values.storage.trashRetentionHours }}h before being purged.
+{{- if eq .Values.storage.accessMode "ReadWriteOnce" }}
+
+WARNING: with ReadWriteOnce all pods using the volume must run on the same node,
+otherwise they stay in ContainerCreating (Multi-Attach). Use ReadWriteMany to avoid this.
+{{- end }}
 
 ADMIN CREDENTIALS
 -----------------

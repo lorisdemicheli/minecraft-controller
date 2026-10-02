@@ -2,20 +2,37 @@
 # The console is served on console.<baseDomain>, the API on api.<baseDomain>
 # and every Minecraft server on <server-name>.<baseDomain>.
 # The installation fails if this is left empty.
-baseDomain: ""
+baseDomain: "mc.lorisdemicheli.it"
 
 nameOverride: ""
 fullnameOverride: ""
 
 # -- Pull secrets for the images below.
-imagePullSecrets: []
+imagePullSecrets:
+  - name: regcred   # created by install.sh (private Docker Hub repo)
 
-servers:
-  # -- Namespace where the controller creates the Minecraft servers
-  # (StatefulSets, Services, PVCs). Empty = release namespace.
-  # If different from the release namespace it MUST already exist.
-  # NOTE: uninstalling the chart never deletes servers or their worlds (PVCs).
-  namespace: ""
+storage:
+  # -- Size of the ONE volume shared by all servers (each gets its own folder).
+  # Longhorn keeps several replicas, so it uses size x replicas on the nodes' disks.
+  size: 50Gi
+  # -- StorageClass. Empty = the cluster default.
+  className: longhorn
+  # -- ReadWriteMany lets servers run on any node (needs an RWX-capable class, e.g. Longhorn
+  # with the NFSv4 client installed on every node). ReadWriteOnce only works if every pod
+  # (controller and servers) ends up on the same node.
+  accessMode: ReadWriteMany
+  # -- Use an existing PVC (in the release namespace) instead of creating one.
+  existingClaim: ""
+  # -- UID/GID the controller and the server processes run as (itzg default: 1000).
+  uid: 1000
+  gid: 1000
+  # -- chown the volume root to uid:gid before the controller starts.
+  initPermissions: true
+  initImage: busybox:1.37
+  # -- Deleted servers stay in <volume>/.trash for this long (hours) before being purged.
+  trashRetentionHours: 24
+  # -- Creating a server is refused when the volume has less free space than this.
+  minFreeGb: 2
 
 auth:
   # -- Username of the single admin account.
@@ -40,7 +57,7 @@ rbac:
 controller:
   image:
     repository: lorisdemicheli/minecraft-controller
-    tag: latest
+    tag: dev
     pullPolicy: Always
   replicas: 1
   port: 8080
@@ -54,7 +71,7 @@ controller:
 # NOTE: the API URL is compiled into the bundle (src/environments/*.ts);
 # the image must be built with apiBasePath = http://api.<baseDomain>.
 frontend:
-  enabled: true
+  enabled: false   # no console image yet
   image:
     repository: lorisdemicheli/minecraft-console
     tag: latest
@@ -74,7 +91,7 @@ router:
   image:
     repository: itzg/mc-router
     tag: latest
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
   replicas: 1
   autoScale:
     # -- Start a stopped server (replicas 0 -> 1) when a player connects.
@@ -96,7 +113,7 @@ router:
 
 ingress:
   enabled: true
-  className: nginx
+  className: traefik   # k3s default; use "nginx" if you installed ingress-nginx
   # -- Extra annotations for both Ingresses (e.g. cert-manager issuer).
   annotations: {}
   tls:
@@ -111,4 +128,4 @@ ingress:
       nginx.ingress.kubernetes.io/proxy-buffering: "off"
       nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-      nginx.ingress.kubernetes.io/proxy-body-size: "512m"
+      nginx.ingress.kubernetes.io/proxy-body-size: "1g"

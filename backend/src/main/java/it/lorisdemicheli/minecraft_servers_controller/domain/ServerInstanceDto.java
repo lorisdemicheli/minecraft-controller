@@ -1,5 +1,6 @@
 package it.lorisdemicheli.minecraft_servers_controller.domain;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -17,4 +18,8 @@ public class ServerInstanceDto {
   private String version;
   private String modrinthProjectId;
   private String curseforgePageUrl;
+
+  /** Filled by the server on reads; ignored on create/update. */
+  @Schema(accessMode = Schema.AccessMode.READ_ONLY)
+  private ServerState state;
 }

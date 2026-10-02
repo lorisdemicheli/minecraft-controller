@@ -46,9 +46,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end -}}
 
-{{/* Namespace where Minecraft servers are created */}}
+{{/* Servers always live in the release namespace: they must share the data PVC with the controller */}}
 {{- define "minecraft-controller.serversNamespace" -}}
-{{- default .Release.Namespace .Values.servers.namespace -}}
+{{- .Release.Namespace -}}
+{{- end -}}
+
+{{/* Name of the PVC shared by controller and servers */}}
+{{- define "minecraft-controller.claimName" -}}
+{{- default (printf "%s-data" (include "minecraft-controller.fullname" .)) .Values.storage.existingClaim -}}
 {{- end -}}
 
 {{/* Name of the Secret holding credentials */}}

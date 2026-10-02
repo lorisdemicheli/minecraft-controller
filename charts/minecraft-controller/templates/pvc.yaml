@@ -1,0 +1,21 @@
+{{- if not .Values.storage.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "minecraft-controller.claimName" . }}
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+  annotations:
+    # worlds must survive `helm uninstall`
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.storage.accessMode }}
+  {{- with .Values.storage.className }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.size | quote }}
+{{- end }}

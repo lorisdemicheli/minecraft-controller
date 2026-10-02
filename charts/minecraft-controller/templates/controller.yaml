@@ -1,5 +1,7 @@
 {{- $fullname := include "minecraft-controller.fullname" . -}}
 {{- $secret := include "minecraft-controller.secretName" . -}}
+{{- $claim := include "minecraft-controller.claimName" . -}}
+{{- $scheme := ternary "https" "http" .Values.ingress.tls.enabled -}}
 {{- $sel := dict "ctx" . "component" "controller" -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -19,9 +21,27 @@ spec:
         {{- include "minecraft-controller.selectorLabels" $sel | nindent 8 }}
     spec:
       serviceAccountName: {{ $fullname }}-controller
+      securityContext:
+        runAsUser: {{ .Values.storage.uid }}
+        runAsGroup: {{ .Values.storage.gid }}
+        fsGroup: {{ .Values.storage.gid }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.storage.initPermissions }}
+      initContainers:
+        - name: fix-permissions
+          image: {{ .Values.storage.initImage | quote }}
+          command:
+            - sh
+            - -c
+            - chown {{ .Values.storage.uid }}:{{ .Values.storage.gid }} /data && chmod 775 /data || echo "WARN could not chown /data, continuing"
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /data
       {{- end }}
       containers:
         - name: controller
@@ -38,6 +58,20 @@ spec:
               value: {{ include "minecraft-controller.serversNamespace" . | quote }}
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_BASEDOMAIN
               value: {{ include "minecraft-controller.baseDomain" . | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_CORSALLOWEDORIGINS
+              value: "{{ $scheme }}://console.{{ include "minecraft-controller.baseDomain" . }}"
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_STORAGE_DATADIR
+              value: /data
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_STORAGE_CLAIMNAME
+              value: {{ $claim | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_STORAGE_UID
+              value: {{ .Values.storage.uid | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_STORAGE_GID
+              value: {{ .Values.storage.gid | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_STORAGE_TRASHRETENTIONHOURS
+              value: {{ .Values.storage.trashRetentionHours | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_STORAGE_MINFREEGB
+              value: {{ .Values.storage.minFreeGb | quote }}
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_USERNAME
               value: {{ .Values.auth.username | quote }}
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_JWTEXPIRATIONMS
@@ -61,6 +95,9 @@ spec:
             {{- with .Values.controller.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
           startupProbe:
             tcpSocket:
               port: http
@@ -78,6 +115,10 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $claim }}
       {{- with .Values.controller.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

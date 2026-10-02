@@ -2,7 +2,7 @@ apiVersion: v2
 name: minecraft-controller
 description: Kubernetes-native controller, web console and hostname router for managing Minecraft servers.
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "1.0.0"
 kubeVersion: ">=1.25.0-0"
 keywords:

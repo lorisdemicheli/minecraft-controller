@@ -30,8 +30,9 @@ public class SecurityConfig {
       {"/login", "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/v3/api-docs.yaml"};
 
   @Bean
-  SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter) throws Exception {
-    http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+  SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter,
+      CorsConfigurationSource corsConfigurationSource) throws Exception {
+    http.cors(cors -> cors.configurationSource(corsConfigurationSource))
         .csrf(csrf -> csrf.disable()) //
         .formLogin(form -> form.disable()) //
         .httpBasic(basic -> basic.disable()) //
@@ -59,11 +60,11 @@ public class SecurityConfig {
   }
 
   @Bean
-  CorsConfigurationSource corsConfigurationSource() {
+  CorsConfigurationSource corsConfigurationSource(MinecraftServerOptions options) {
     CorsConfiguration configuration = new CorsConfiguration();
 
-    configuration.setAllowedOrigins(List.of("http://localhost:4200"));
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+    configuration.setAllowedOrigins(options.getCorsAllowedOrigins());
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(List.of("*"));
     configuration.setAllowCredentials(true);
 

@@ -1,24 +1,21 @@
 package it.lorisdemicheli.minecraft_servers_controller.config;
 
-import lombok.Getter;
-import lombok.Setter;
+/**
+ * Labels are only used to <em>select</em> resources. The configuration of a server lives in a single
+ * annotation (label values cannot hold URLs and are limited to 63 characters).
+ */
+public final class MinecraftServerLabel {
 
-@Getter
-@Setter
-public class MinecraftServerLabel {
+  public static final String LABEL_PREFIX = "it.lorisdemicheli/";
 
-  public final static String LABEL_PREFIX = "it.lorisdemicheli/";
+  public static final String LABEL_SERVER_NAME = LABEL_PREFIX + "app";
+  public static final String LABEL_MANAGED_BY = "managed-by";
+  public static final String MANAGED_BY_VALUE = "minecraft-controller";
 
-  public final static String LABEL_SERVER_NAME = LABEL_PREFIX + "app";
-  public final static String LABEL_SERVER_TYPE = LABEL_PREFIX + "server-type";
-  public final static String LABEL_SERVER_CPU = LABEL_PREFIX + "cpu";
-  public final static String LABEL_SERVER_MEMORY = LABEL_PREFIX + "memory";
+  /** JSON of {@code ServerConfig}. */
+  public static final String ANNOTATION_CONFIG = LABEL_PREFIX + "config";
+  /** itzg/mc-router discovers servers through this annotation on their Service. */
+  public static final String ANNOTATION_ROUTER = "mc-router.itzg.me/externalServerName";
 
-  public final static String LABEL_SERVER_MINECRAFT_EULA = LABEL_PREFIX + "eula";
-  public final static String LABEL_SERVER_MINECRAFT_VERSION = LABEL_PREFIX + "version";
-  public final static String LABEL_SERVER_MODRINTH_PROJECT_ID =
-      LABEL_PREFIX + "modrinth-project-id";
-  public final static String LABEL_SERVER_CURSEFORGE_URL = LABEL_PREFIX + "curseforge-url";
-
-  public final static String LABEL_MANAGED_BY = "managed-by";
+  private MinecraftServerLabel() {}
 }
