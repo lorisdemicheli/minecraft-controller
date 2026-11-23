@@ -159,32 +159,51 @@ class ApiIntegrationTest {
     assertTrue(r.body().contains("Server ghost not found"));
   }
 
+  /**
+   * The console parses the stream like any SSE client (WHATWG): one {@code data:} event per log
+   * line, one optional space after the colon removed. The bytes are not compared literally, and the
+   * read has a timeout: the stream never ends, so a wrong format must fail the test, not hang it.
+   */
   @Test
+  @org.junit.jupiter.api.Timeout(value = 30, unit = java.util.concurrent.TimeUnit.SECONDS)
   void logStreamKeepsTheWireFormatOfTheConsole() throws Exception {
     java.nio.file.Path logs = java.nio.file.Path.of("target/it-data/alpha/logs");
     java.nio.file.Files.createDirectories(logs);
-    java.nio.file.Files.writeString(logs.resolve("latest.log"), "[12:00:00] [Server thread/INFO]: one\ntwo\n");
+    java.nio.file.Files.writeString(logs.resolve("latest.log"),
+        "[12:00:00] [Server thread/INFO]: one\ntwo\n  indented\n");
 
     HttpResponse<java.io.InputStream> r = http.send(
         authed("/servers/alpha/console/logs").header("Accept", "text/event-stream").build(),
         HttpResponse.BodyHandlers.ofInputStream());
     assertEquals(200, r.statusCode());
     assertTrue(r.headers().firstValue("Content-Type").orElse("").startsWith("text/event-stream"));
+
+    java.util.List<String> events = new java.util.ArrayList<>();
+    StringBuilder pending = new StringBuilder();
     StringBuilder received = new StringBuilder();
     try (java.io.InputStream in = r.body()) {
       byte[] buf = new byte[256];
-      while (!received.toString().contains("data:two\n\n")) {
+      while (events.size() < 3) {
         int n = in.read(buf);
         if (n < 0) {
           break;
         }
-        received.append(new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8));
+        String chunk = new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8);
+        received.append(chunk);
+        pending.append(chunk);
+        int end;
+        while ((end = pending.indexOf("\n\n")) >= 0) {
+          String event = pending.substring(0, end);
+          pending.delete(0, end + 2);
+          if (event.startsWith("data:")) {
+            String value = event.substring("data:".length());
+            events.add(value.startsWith(" ") ? value.substring(1) : value);
+          }
+        }
       }
     }
-    // one "data:" event per line, as the console parser expects
-    assertTrue(received.toString().contains("data:[12:00:00] [Server thread/INFO]: one\n\n"),
+    assertEquals(java.util.List.of("[12:00:00] [Server thread/INFO]: one", "two", "  indented"), events,
         received.toString());
-    assertTrue(received.toString().contains("data:two\n\n"), received.toString());
   }
 
   @Test

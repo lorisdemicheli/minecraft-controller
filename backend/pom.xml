@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.1</version>
+		<version>4.2.0</version>
 		<relativePath /> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>it.lorisdemicheli</groupId>
@@ -32,7 +32,29 @@
 		<kubernetes-client.version>24.0.0</kubernetes-client.version>
 		<jjwt.version>0.11.5</jjwt.version>
 		<spring-doc.version>3.0.0</spring-doc.version>
+		<!-- not managed by the Spring Boot BOM: client-java 24.0.0 brings 1.80.x, which has fixable
+		     CRITICAL CVEs (the CI image scan blocks on them) -->
+		<bouncycastle.version>1.85</bouncycastle.version>
 	</properties>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcprov-jdk18on</artifactId>
+				<version>${bouncycastle.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcpkix-jdk18on</artifactId>
+				<version>${bouncycastle.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcutil-jdk18on</artifactId>
+				<version>${bouncycastle.version}</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 	<dependencies>
 		<dependency>
 			<groupId>io.kubernetes</groupId>

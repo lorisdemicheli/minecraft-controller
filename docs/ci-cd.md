@@ -57,6 +57,8 @@ Il package GHCR eredita la visibilità del repository; se è privato serve un pu
 - `actions/checkout` con `persist-credentials: false`.
 - Cache: Maven/npm via `setup-java`/`setup-node` (chiave dai file di lock/pom), layer Docker via cache GitHub Actions (`type=gha`), entrambe con scope del repository.
 - Build riproducibile: `SOURCE_DATE_EPOCH` = data del commit.
+- Trivy gira dalla sua immagine ufficiale (`TRIVY_IMAGE` in `ci.yml`, v0.65.0 fissata per digest), non da un'action che lo installa: nulla da installare sul runner. Il database delle vulnerabilità è in un volume condiviso dai due passaggi di scansione.
+- La matrice `docker` ha `fail-fast: false`: se un'immagine fallisce l'altra non viene cancellata e il suo esito resta visibile.
 
 ### Politica Trivy
 

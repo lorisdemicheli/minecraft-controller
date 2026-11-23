@@ -8,7 +8,7 @@ Leggi questa sezione prima di esplorare il codice.
 | Layer | Tecnologia | Versione |
 |---|---|---|
 | Linguaggio | Java | 21 |
-| Framework | Spring Boot | 4.0.1 |
+| Framework | Spring Boot | 4.2.0 |
 | Build | Maven | 3.9 |
 | Kubernetes client | client-java | 24.0.0 |
 | Health / metriche | Spring Boot Actuator + Micrometer Prometheus | gestite da BOM |
@@ -21,6 +21,8 @@ Leggi questa sezione prima di esplorare il codice.
 | Frontend | Angular (SSR) + Material, test Vitest | 21 |
 | Deploy | Helm chart | 0.5.0 |
 | CI | GitHub Actions (solo `main`) | — |
+
+BouncyCastle (`bcprov`/`bcpkix`/`bcutil`, transitivo di `client-java`) è fissato in `backend/pom.xml` (`bouncycastle.version`): la BOM di Spring non lo gestisce e la scansione Trivy della CI blocca sulle CVE CRITICAL con fix. Spring Boot va tenuto aggiornato per lo stesso motivo (Tomcat, Spring Security e Framework arrivano dalla BOM).
 
 Il modulo `client-java-spring-integration` non va reintrodotto: registra un'autoconfigurazione che richiede Prometheus simpleclient e impediva l'avvio del contesto.
 

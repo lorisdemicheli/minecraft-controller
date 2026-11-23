@@ -17,6 +17,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Trivy v0.65.0, run from its official image pinned by digest (the install step of the
+  # trivy-action failed on the runner, and a container needs nothing installed).
+  TRIVY_IMAGE: aquasec/trivy@sha256:a22415a38938a56c379387a8163fcb0ce38b10ace73e593475d3658d578b2436
   KUBECONFORM_VERSION: v0.6.7
   KUBECONFORM_SHA256: 95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73
 
@@ -177,6 +180,8 @@ jobs:
       contents: read
       packages: write
     strategy:
+      # one image failing must not cancel the other: both results are needed
+      fail-fast: false
       matrix:
         include:
           - component: controller
@@ -225,23 +230,23 @@ jobs:
 
       # Fixable CRITICAL vulnerabilities block the release; HIGH ones are only reported
       # (often in the base image, without a fix yet). See docs/ci-cd.md.
+      # The vulnerability database is kept in a volume shared by the two scans of this job; the checkout
+      # is mounted so that a .trivyignore at the root of the repository is honoured.
       - name: Scan (CRITICAL, fixable -> blocking)
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
-        with:
-          image-ref: ${{ matrix.image }}:scan
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-          format: table
+        env:
+          IMAGE: ${{ matrix.image }}:scan
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache \
+            -v "$PWD:/work:ro" -w /work \
+            "$TRIVY_IMAGE" image --severity CRITICAL --ignore-unfixed --exit-code 1 --format table "$IMAGE"
 
       - name: Scan (HIGH, report only)
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
-        with:
-          image-ref: ${{ matrix.image }}:scan
-          severity: HIGH
-          exit-code: "0"
-          format: table
-          skip-setup-trivy: true
+        env:
+          IMAGE: ${{ matrix.image }}:scan
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache \
+            -v "$PWD:/work:ro" -w /work \
+            "$TRIVY_IMAGE" image --severity HIGH --exit-code 0 --format table "$IMAGE"
 
       - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
