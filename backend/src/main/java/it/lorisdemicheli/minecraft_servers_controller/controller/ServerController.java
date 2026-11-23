@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceDto;
+import it.lorisdemicheli.minecraft_servers_controller.service.ServerLifecycleManager;
 import it.lorisdemicheli.minecraft_servers_controller.service.ServerService;
 import lombok.RequiredArgsConstructor;
 
@@ -60,11 +61,15 @@ public class ServerController {
   /**
    * @param deleteData move the server's files to the trash (kept for the configured retention
    *        period); false leaves them in place for a future server with the same name.
+   * @return 204 when done, 202 when the files will be moved to the trash as soon as the server
+   *         pod has stopped (the name stays reserved until then)
    */
   @DeleteMapping(path = "/{serverName}")
   public ResponseEntity<Void> deleteServer(@PathVariable String serverName,
       @RequestParam(defaultValue = "true") boolean deleteData) {
-    service.delete(serverName, deleteData);
-    return ResponseEntity.noContent().build();
+    ServerLifecycleManager.DeleteOutcome outcome = service.delete(serverName, deleteData);
+    return outcome == ServerLifecycleManager.DeleteOutcome.DATA_PENDING
+        ? ResponseEntity.accepted().build()
+        : ResponseEntity.noContent().build();
   }
 }

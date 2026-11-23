@@ -24,7 +24,7 @@ Classi: `CustomUserDetailsService`, `JwtComponent`, `JwtAuthFilter`, `SecurityCo
 
 ## Trade-off e Limitazioni
 
-- **Nessuna invalidazione token**: un token valido rimane tale per tutta la sua durata (default 24h). In caso di compromissione la soluzione è cambiare `jwtSecret` (invalida tutti i token esistenti) e fare `helm upgrade`.
+- **Invalidazione solo per rotazione**: non esiste una revoca del singolo token. Un token resta valido fino alla scadenza (default 24h) a meno che cambino le credenziali (vedi *Aggiornamento 2026*). In caso di compromissione: cambiare password o `jwtSecret` nel Secret e riavviare il controller.
 - **Nessun multi-utente**: impossibile dare accesso in sola lettura a terzi senza condividere le credenziali admin.
 - **Nessun refresh token**: alla scadenza il client deve ri-autenticarsi.
 
@@ -33,3 +33,13 @@ Classi: `CustomUserDetailsService`, `JwtComponent`, `JwtAuthFilter`, `SecurityCo
 - **OAuth2 / OIDC**: appropriato per sistemi multi-utente, aggiunge dipendenza da identity provider esterno (Keycloak, Auth0, ecc.) — over-engineering per l'uso previsto.
 - **Spring Security con DB utenti**: richiede un database, migrazioni, gestione password utenti. Non giustificato per un solo utente.
 - **Basic Auth**: non stateless, non adatto a SPA o CLI che fanno molte richieste.
+
+## Aggiornamento 2026 — revoca dopo rotazione delle credenziali
+
+**Problema**: cambiare la password dell'admin non invalidava i token già emessi; serviva cambiare anche il `jwtSecret`.
+
+**Decisione**: ogni token contiene il claim `cv` = HMAC-SHA256(jwtSecret, username + password), troncato. La validazione confronta `cv` con il valore calcolato dalle credenziali correnti: dopo un cambio di password o username (e il riavvio che rilegge il Secret) tutti i token precedenti vengono rifiutati con 401 "Credentials changed". Il claim non permette di ricavare password né secret.
+
+Restano invariati: nessun database, nessuna lista di revoca, modello single-admin. Sono stati aggiunti anche issuer obbligatorio, verifica dell'algoritmo HS256, clock skew di 30 secondi e un limite ai login falliti per client (429).
+
+**Alternative scartate**: denylist dei `jti` (richiede stato condiviso o persistente), versione delle credenziali in una ConfigMap (stato da mantenere a mano), token a vita brevissima con refresh token (complessità non giustificata per un solo utente).

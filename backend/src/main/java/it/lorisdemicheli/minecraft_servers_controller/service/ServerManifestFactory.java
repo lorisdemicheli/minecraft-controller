@@ -7,6 +7,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 import io.kubernetes.client.custom.IntOrString;
 import io.kubernetes.client.custom.Quantity;
+import io.kubernetes.client.openapi.models.V1Capabilities;
 import io.kubernetes.client.openapi.models.V1Container;
 import io.kubernetes.client.openapi.models.V1ContainerPort;
 import io.kubernetes.client.openapi.models.V1EnvVar;
@@ -14,10 +15,13 @@ import io.kubernetes.client.openapi.models.V1ExecAction;
 import io.kubernetes.client.openapi.models.V1LabelSelector;
 import io.kubernetes.client.openapi.models.V1ObjectMeta;
 import io.kubernetes.client.openapi.models.V1PersistentVolumeClaimVolumeSource;
+import io.kubernetes.client.openapi.models.V1PodSecurityContext;
 import io.kubernetes.client.openapi.models.V1PodSpec;
 import io.kubernetes.client.openapi.models.V1PodTemplateSpec;
 import io.kubernetes.client.openapi.models.V1Probe;
 import io.kubernetes.client.openapi.models.V1ResourceRequirements;
+import io.kubernetes.client.openapi.models.V1SeccompProfile;
+import io.kubernetes.client.openapi.models.V1SecurityContext;
 import io.kubernetes.client.openapi.models.V1Service;
 import io.kubernetes.client.openapi.models.V1ServicePort;
 import io.kubernetes.client.openapi.models.V1ServiceSpec;
@@ -81,6 +85,7 @@ public class ServerManifestFactory {
         .addPortsItem(new V1ContainerPort().name("minecraft").containerPort(MINECRAFT_PORT)) //
         .env(envs(dto)) //
         .resources(resources(dto)) //
+        .securityContext(containerSecurity()) //
         // A big modpack can need a long time to install and start: nothing else is checked
         // (and nothing is killed) until the startup probe succeeds, up to 30 minutes.
         .startupProbe(mcHealth().initialDelaySeconds(30).periodSeconds(10).failureThreshold(180)) //
@@ -104,6 +109,10 @@ public class ServerManifestFactory {
                 .spec(new V1PodSpec() //
                     .terminationGracePeriodSeconds(
                         (long) options.getTerminationGracePeriodSeconds())
+                    // Minecraft never talks to the Kubernetes API: no token in the pod
+                    .automountServiceAccountToken(false) //
+                    .enableServiceLinks(false) //
+                    .securityContext(podSecurity()) //
                     .addContainersItem(container) //
                     .addVolumesItem(new V1Volume() //
                         .name(DATA_VOLUME) //
@@ -111,12 +120,31 @@ public class ServerManifestFactory {
                             .claimName(options.getStorage().getClaimName())))))); 
   }
 
-  /** Applies a new configuration to an existing StatefulSet (selector and storage untouched). */
+  /**
+   * Applies a new configuration to an existing StatefulSet (selector and storage untouched). The
+   * pod settings derived from the controller's configuration are refreshed too.
+   */
   public void apply(V1StatefulSet sts, ServerInstanceDto dto) {
     sts.getMetadata().putAnnotationsItem(MinecraftServerLabel.ANNOTATION_CONFIG, toJson(dto));
-    V1Container container = sts.getSpec().getTemplate().getSpec().getContainers().get(0);
+    V1PodSpec pod = sts.getSpec().getTemplate().getSpec();
+    pod.setAutomountServiceAccountToken(false);
+    pod.setSecurityContext(podSecurity());
+    V1Container container = pod.getContainers().stream()
+        .filter(c -> CONTAINER_NAME.equals(c.getName())).findFirst()
+        .orElse(pod.getContainers().get(0));
     container.setEnv(envs(dto));
     container.setResources(resources(dto));
+    container.setSecurityContext(containerSecurity());
+  }
+
+  /**
+   * Command that writes a line to the server console. With the default (root) image setup it has
+   * to run as the {@code minecraft} user that owns the console pipe.
+   */
+  public String[] consoleCommand(String line) {
+    return options.getServerSecurity().isRunAsNonRoot()
+        ? new String[] {"mc-send-to-console", line}
+        : new String[] {"gosu", "minecraft", "mc-send-to-console", line};
   }
 
   // ---------------------------------------------------------------- read
@@ -152,13 +180,55 @@ public class ServerManifestFactory {
     return envs;
   }
 
-  private static V1ResourceRequirements resources(ServerInstanceDto dto) {
-    // the JVM heap is MEMORY; the container also needs room for metaspace, threads, ...
-    String memory = String.format("%dM", (int) (dto.getMemory() * 1.15));
-    String cpu = String.format("%dm", dto.getCpu());
-    return new V1ResourceRequirements() //
-        .putLimitsItem("cpu", new Quantity(cpu)) //
-        .putLimitsItem("memory", new Quantity(memory));
+  /**
+   * The memory chosen by the user is the Java heap ({@code MEMORY}); the container limit adds an
+   * overhead for metaspace, threads, direct buffers... Requests are a percentage of the limits
+   * (100% by default, i.e. Guaranteed QoS).
+   */
+  V1ResourceRequirements resources(ServerInstanceDto dto) {
+    var r = options.getServerResources();
+    long heapMb = dto.getMemory();
+    long overheadMb = Math.max(heapMb * r.getMemoryOverheadPercent() / 100, r.getMemoryOverheadMinMb());
+    long memoryLimitMb = heapMb + overheadMb;
+    long memoryRequestMb = ceilPercent(memoryLimitMb, r.getMemoryRequestPercent());
+    long cpuRequest = Math.max(10, ceilPercent(dto.getCpu(), r.getCpuRequestPercent()));
+
+    V1ResourceRequirements resources = new V1ResourceRequirements() //
+        .putRequestsItem("cpu", new Quantity(cpuRequest + "m")) //
+        .putRequestsItem("memory", new Quantity(memoryRequestMb + "Mi")) //
+        .putLimitsItem("memory", new Quantity(memoryLimitMb + "Mi"));
+    if (r.isCpuLimitEnabled()) {
+      resources.putLimitsItem("cpu", new Quantity(dto.getCpu() + "m"));
+    }
+    return resources;
+  }
+
+  private static long ceilPercent(long value, int percent) {
+    return (value * percent + 99) / 100;
+  }
+
+  private V1PodSecurityContext podSecurity() {
+    V1PodSecurityContext security = new V1PodSecurityContext()
+        .seccompProfile(new V1SeccompProfile().type("RuntimeDefault"));
+    if (options.getServerSecurity().isRunAsNonRoot()) {
+      long uid = options.getStorage().getUid();
+      long gid = options.getStorage().getGid();
+      security.runAsNonRoot(true).runAsUser(uid).runAsGroup(gid).fsGroup(gid);
+    }
+    return security;
+  }
+
+  /**
+   * Never privileged and no privilege escalation (setuid binaries). As root (default) the image
+   * keeps the capabilities it needs to chown /data and switch to the minecraft user.
+   */
+  private V1SecurityContext containerSecurity() {
+    V1SecurityContext security =
+        new V1SecurityContext().privileged(false).allowPrivilegeEscalation(false);
+    if (options.getServerSecurity().isRunAsNonRoot()) {
+      security.capabilities(new V1Capabilities().addDropItem("ALL"));
+    }
+    return security;
   }
 
   private static V1Probe mcHealth() {

@@ -4,8 +4,13 @@
 {{- $base := include "minecraft-controller.baseDomain" . }}
 {{- $scheme := ternary "https" "http" .Values.ingress.tls.enabled }}
 
-Web console : {{ $scheme }}://console.{{ $base }}
-Backend API : {{ $scheme }}://api.{{ $base }}  (Swagger: /swagger-ui/index.html)
+{{- if .Values.frontend.enabled }}
+Web console : {{ $scheme }}://{{ include "minecraft-controller.consoleHost" . }}
+{{- else }}
+Web console : disabled (frontend.enabled=false)
+{{- end }}
+Backend API : {{ $scheme }}://{{ include "minecraft-controller.apiHost" . }}  (Swagger: /swagger-ui/index.html)
+Image       : {{ include "minecraft-controller.image" .Values.controller.image }}
 Servers in  : namespace "{{ .Release.Namespace }}"
 
 DATA VOLUME
@@ -33,4 +38,15 @@ DNS SETUP
    (specific records for console/api take precedence over the wildcard)
 
 Reserved names: do not create Minecraft servers named "console" or "api".
+Check the installation: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if and .Values.backup.enabled (eq .Values.storage.accessMode "ReadWriteOnce") }}
+
+WARNING: backup.enabled with a ReadWriteOnce data volume: the backup job must run on the
+same node as the controller, otherwise it stays Pending.
+{{- end }}
+{{- if eq .Values.controller.image.tag "main" }}
+
+NOTE: controller.image.tag=main is a moving tag. For reproducible installs use
+--set controller.image.tag=sha-<commit> (published by the CI).
+{{- end }}
 -----------------------------------------------------------------------

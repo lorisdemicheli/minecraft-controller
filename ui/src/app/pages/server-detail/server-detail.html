@@ -1,124 +1,219 @@
-<div class="detail-wrapper">
+<div class="page">
+  <a class="back" routerLink="/servers"><mat-icon>arrow_back</mat-icon> Tutti i server</a>
 
-  <!-- Header -->
-  <div class="header">
-    <div class="header-left">
-      <div class="server-icon">
-        @if (serverInfo()?.icon) {
-          <img [src]="serverInfo()!.icon" alt="icon" />
-        } @else {
-          <mat-icon>dns</mat-icon>
-        }
-      </div>
-      <div class="server-title">
-        <h1>{{ serverName }}</h1>
-        <div class="meta">
-          <span class="state-badge" [ngClass]="getStateClass()">
-            <span class="state-dot"></span>
-            {{ getStateLabel() }}
+  <header class="head card">
+    <div class="head__id">
+      <span class="head__icon" [class.has-icon]="icon()">
+        @if (icon(); as src) { <img [src]="src" alt="" width="64" height="64" /> } @else { <mat-icon>dns</mat-icon> }
+      </span>
+      <div class="head__text">
+        <div class="head__title">
+          <h1 class="mono">{{ serverName }}</h1>
+          <span [class]="'badge badge--' + stateKey()">
+            <span [class]="'dot dot--' + stateKey()"></span>{{ stateLabel() }}
           </span>
-          @if (serverInfo()?.version?.name) {
-            <span class="tag">{{ serverInfo()!.version!.name }}</span>
-          }
-          @if (serverInfo()?.population) {
-            <span class="tag">
-              {{ serverInfo()!.population!.online ?? 0 }}/{{ serverInfo()!.population!.max ?? 0 }} players
-            </span>
-          }
         </div>
+        <p class="muted">
+          @if (serverInfo()?.version?.name; as version) { Minecraft {{ version }} }
+          @if (isRunning() && serverInfo()?.population; as pop) { · {{ pop.online ?? 0 }}/{{ pop.max ?? 0 }} giocatori }
+        </p>
       </div>
     </div>
 
-    <div class="header-actions">
-      @if (serverInfo()?.state === StateEnum.Stopped) {
-        <button mat-flat-button class="btn-start" (click)="start()">
-          <mat-icon>play_arrow</mat-icon> Start
-        </button>
+    <div class="head__actions">
+      <a class="btn" [routerLink]="['/servers', serverName, 'files']"><mat-icon>folder_open</mat-icon> File</a>
+      @if (canStart()) {
+        <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="start()"><mat-icon>play_arrow</mat-icon> Avvia</button>
       }
-      @if (serverInfo()?.state === StateEnum.Running || serverInfo()?.state === StateEnum.Starting) {
-        <button mat-flat-button class="btn-stop" (click)="stop()">
-          <mat-icon>stop</mat-icon> Stop
-        </button>
-        <button mat-stroked-button class="btn-terminate" (click)="terminate()" matTooltip="Termina forzatamente">
-          <mat-icon>power_off</mat-icon>
+      @if (canStop()) {
+        <button class="btn" type="button" [disabled]="busy()" (click)="stop()"><mat-icon>stop</mat-icon> Arresta</button>
+      }
+      @if (state() && !isStopped()) {
+        <button class="btn btn--danger btn--icon" type="button" title="Termina subito" aria-label="Termina subito" [disabled]="busy()" (click)="confirmTerminate.set(true)">
+          <mat-icon>power_settings_new</mat-icon>
         </button>
       }
     </div>
+  </header>
+
+  @if (infoConnection() === 'reconnecting' || infoConnection() === 'closed') {
+    <div class="banner banner--warn" role="status">
+      <mat-icon>sync_problem</mat-icon>
+      <span class="grow">
+        @if (infoConnection() === 'closed') { Impossibile leggere lo stato del server: i dati qui sotto potrebbero non essere aggiornati. }
+        @else { Connessione persa, riprovo…  }
+      </span>
+    </div>
+  }
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" type="button" [class.active]="tab() === 'overview'" [attr.aria-selected]="tab() === 'overview'" (click)="selectTab('overview')">
+      <mat-icon>monitoring</mat-icon> Prestazioni
+    </button>
+    <button class="tab" role="tab" type="button" [class.active]="tab() === 'console'" [attr.aria-selected]="tab() === 'console'" (click)="selectTab('console')">
+      <mat-icon>terminal</mat-icon> Console
+      @if (counts().error) { <span class="badge badge--danger">{{ counts().error }}</span> }
+    </button>
   </div>
 
-  <!-- Pannelli info -->
-  <div class="panels">
-    <div class="panel">
-      <div class="panel-title">Versione</div>
-      <div class="panel-rows">
-        <div class="panel-row">
-          <span>Nome</span>
-          <span>{{ serverInfo()?.version?.name ?? '—' }}</span>
+  @if (tab() === 'overview') {
+    <section class="perf" aria-label="Prestazioni">
+      <article class="card metric">
+        <header><span class="eyebrow">CPU</span><span class="badge" [class.badge--running]="live()">{{ live() ? 'Live' : 'Offline' }}</span></header>
+        <strong class="metric__value num">{{ formatCpu(serverInfo()?.cpuUsage) }}</strong>
+        <small class="faint">su {{ formatCpu(serverInfo()?.maxCpu) }}@if (cpuPercent() !== null) { · {{ cpuPercent()!.toFixed(0) }}% }</small>
+        <div class="progress" [class]="'progress progress--' + (level(cpuPercent()) === 'ok' ? '' : level(cpuPercent()))"><span [style.width.%]="cpuPercent() ?? 0"></span></div>
+        <app-sparkline [values]="cpuSamples()" [max]="serverInfo()?.maxCpu ?? null" label="Andamento CPU" />
+      </article>
+
+      <article class="card metric metric--info">
+        <header><span class="eyebrow">Memoria</span></header>
+        <strong class="metric__value num">{{ formatMemory(serverInfo()?.memoryUsage) }}</strong>
+        <small class="faint">su {{ formatMemory(serverInfo()?.maxMemory) }}@if (memoryPercent() !== null) { · {{ memoryPercent()!.toFixed(0) }}% }</small>
+        <div class="progress" [class]="'progress progress--' + (level(memoryPercent()) === 'ok' ? 'info' : level(memoryPercent()))"><span [style.width.%]="memoryPercent() ?? 0"></span></div>
+        <app-sparkline [values]="memorySamples()" [max]="serverInfo()?.maxMemory ?? null" label="Andamento memoria" />
+      </article>
+
+      <article class="card metric">
+        <header><span class="eyebrow">Giocatori</span></header>
+        <strong class="metric__value num">{{ serverInfo()?.population?.online ?? 0 }}<span class="faint"> / {{ serverInfo()?.population?.max ?? '—' }}</span></strong>
+        <small class="faint">{{ isRunning() ? 'connessi ora' : 'server non in esecuzione' }}</small>
+        <div class="progress"><span [style.width.%]="playersPercent() ?? 0"></span></div>
+        <ul class="players">
+          @for (player of players(); track player.id ?? player.name) {
+            <li><span class="avatar" aria-hidden="true">{{ (player.name ?? '?').charAt(0).toUpperCase() }}</span>{{ player.name }}</li>
+          } @empty {
+            <li class="faint">Nessun giocatore online</li>
+          }
+        </ul>
+      </article>
+
+      <article class="card metric">
+        <header>
+          <span class="eyebrow">Disco</span>
+          <button class="btn btn--ghost btn--icon btn--sm" type="button" aria-label="Aggiorna" title="Aggiorna" [disabled]="diskLoading()" (click)="loadUsage()">
+            <mat-icon [class.spin]="diskLoading()">refresh</mat-icon>
+          </button>
+        </header>
+        <strong class="metric__value num">{{ diskError() && !disk() ? '—' : formatBytes(disk()?.usedBytes) }}</strong>
+        <small class="faint">
+          @if (diskError() && !disk()) { Dato non disponibile }
+          @else if (disk()?.partial) { almeno, {{ disk()?.unreadableEntries }} elementi illeggibili }
+          @else { occupati dal server }
+        </small>
+        <div class="progress progress--info"><span [style.width.%]="diskSharePercent() ?? 0"></span></div>
+        <small class="faint">
+          Volume: {{ formatBytes(disk()?.volumeFreeBytes) }} liberi su {{ formatBytes(disk()?.volumeTotalBytes) }}
+          @if (volumePercent() !== null) { ({{ volumePercent()!.toFixed(0) }}% pieno) }
+        </small>
+      </article>
+    </section>
+
+    <section class="card info">
+      <header class="card__head"><h2>Informazioni</h2></header>
+      <dl>
+        <div><dt>Versione</dt><dd class="mono">{{ serverInfo()?.version?.name ?? '—' }}</dd></div>
+        <div><dt>Protocollo</dt><dd class="mono">{{ serverInfo()?.version?.protocol ?? '—' }}</dd></div>
+        <div><dt>MOTD</dt><dd>{{ serverInfo()?.description?.text || '—' }}</dd></div>
+        <div><dt>Stream stato</dt><dd>{{ live() ? 'Connesso' : infoConnection() === 'connecting' ? 'Connessione…' : 'Non connesso' }}</dd></div>
+      </dl>
+    </section>
+  } @else {
+    <section class="console" aria-label="Console">
+      <div class="toolbar">
+        <div class="segmented" role="group" aria-label="Livello dei log">
+          @for (f of filters; track f.key) {
+            <button type="button" [class.active]="filter() === f.key" [attr.aria-pressed]="filter() === f.key" (click)="setFilter(f.key)">
+              {{ f.label }} <span class="count">{{ counts()[f.key] }}</span>
+            </button>
+          }
         </div>
-        <div class="panel-row">
-          <span>Protocollo</span>
-          <span>{{ serverInfo()?.version?.protocol ?? '—' }}</span>
+        <div class="toolbar__right">
+          <div class="input-icon find">
+            <mat-icon>search</mat-icon>
+            <input class="input" type="search" placeholder="Filtra le righe" aria-label="Filtra le righe" [value]="search()" (input)="onSearch($event)" />
+          </div>
+          <button class="btn btn--icon" type="button" [attr.aria-pressed]="!autoScrollPaused()" [title]="autoScrollPaused() ? 'Riprendi lo scroll automatico' : 'Metti in pausa lo scroll'" (click)="toggleAutoScroll()">
+            <mat-icon>{{ autoScrollPaused() ? 'play_arrow' : 'pause' }}</mat-icon>
+          </button>
+          <button class="btn btn--icon" type="button" title="Scarica le righe mostrate" aria-label="Scarica le righe mostrate" [disabled]="!shown().length" (click)="downloadLogs()">
+            <mat-icon>download</mat-icon>
+          </button>
         </div>
       </div>
-    </div>
 
-    <div class="panel">
-      <div class="panel-title">Giocatori</div>
-      <div class="panel-rows">
-        <div class="panel-row">
-          <span>Online</span>
-          <span>{{ serverInfo()?.population?.online ?? 0 }} / {{ serverInfo()?.population?.max ?? 0 }}</span>
-        </div>
-        @if (serverInfo()?.population?.players?.length) {
-          @for (player of serverInfo()!.population!.players!; track player.id) {
-            <div class="panel-row player">
-              <mat-icon>person</mat-icon>
-              <span>{{ player.name }}</span>
-            </div>
-          }
-        } @else {
-          <div class="panel-row muted">Nessun giocatore online</div>
+      <div class="term">
+        @if (isLoadingHistory()) { <div class="term__loading"><span class="spinner"></span> Carico lo storico…</div> }
+        <cdk-virtual-scroll-viewport class="term__view" [itemSize]="ITEM_SIZE" (scrolledIndexChange)="onScroll()">
+          <div *cdkVirtualFor="let line of shown(); trackBy: trackLine" [class]="'line line--' + line.level">
+            <span class="line__time">{{ line.time }}</span><span class="line__text">{{ line.body }}</span>
+          </div>
+        </cdk-virtual-scroll-viewport>
+
+        @if (!shown().length) {
+          <div class="term__empty">
+            @if (!isRunning()) {
+              <mat-icon>power_off</mat-icon>
+              <p>{{ state() === StateEnum.Starting ? 'Il server si sta avviando…' : 'Il server è offline: avvialo per vedere la console.' }}</p>
+            } @else if (logs().length) {
+              <mat-icon>filter_alt_off</mat-icon>
+              <p>Nessuna riga corrisponde al filtro.</p>
+            } @else {
+              <span class="spinner"></span>
+              <p>In attesa dei log…</p>
+            }
+          </div>
         }
+
+        <footer class="term__foot">
+          <span class="term__state" [class.ok]="logConnection() === 'open'">
+            <span class="dot" [class.dot--running]="logConnection() === 'open'"></span>
+            {{ logConnection() === 'open' ? 'In diretta' : logConnection() === 'reconnecting' ? 'Riconnessione…' : logConnection() === 'connecting' ? 'Connessione…' : 'Non connesso' }}
+          </span>
+          <span class="faint num">{{ shown().length }} / {{ logs().length }} righe</span>
+        </footer>
       </div>
-    </div>
-  </div>
 
-  <!-- Console -->
-  <div class="console-section">
-    <div class="console-header">
-      <mat-icon>terminal</mat-icon>
-      <span>Console</span>
-      @if (isLoadingHistory()) {
-        <span class="loading-badge">Caricamento...</span>
-      }
-      @if (allHistoryLoaded()) {
-        <span class="end-badge">Inizio log</span>
-      }
-    </div>
-
-    <!-- cdkScrollable registra il div con ScrollDispatcher -->
-     <cdk-virtual-scroll-viewport
-      class="console-body"
-      itemSize="19"
-      (scrolledIndexChange)="onScrolledIndexChange($event)">
-      <div *cdkVirtualFor="let line of logs();" class="log-line" [ngClass]="getLogClass(line)">
-        {{ line }}
+      <div class="cmd">
+        <div class="chips" aria-label="Comandi rapidi">
+          @for (c of quickCommands; track c) {
+            <button class="chip" type="button" [disabled]="!isRunning() || busy()" (click)="sendCommand(c)">{{ c }}</button>
+          }
+        </div>
+        <form class="cmd__row" (ngSubmit)="sendCommand()">
+          <span class="cmd__prompt mono" aria-hidden="true">›</span>
+          <input
+            class="cmd__input mono"
+            name="command"
+            autocomplete="off"
+            spellcheck="false"
+            [placeholder]="isRunning() ? 'Scrivi un comando, per esempio: say ciao' : 'Il server deve essere online'"
+            aria-label="Comando"
+            [disabled]="!isRunning()"
+            [ngModel]="command()"
+            (ngModelChange)="command.set($event)"
+            (keydown)="onCommandKeydown($event)"
+          />
+          <button class="btn btn--primary" type="submit" [disabled]="!isRunning() || busy() || !command().trim()">
+            <mat-icon>send</mat-icon> Invia
+          </button>
+        </form>
       </div>
-    </cdk-virtual-scroll-viewport>
-
-    <div class="console-input">
-      <span class="prompt">/</span>
-      <input
-        type="text"
-        [(ngModel)]="command"
-        (keydown)="onCommandKeydown($event)"
-        placeholder="Digita un comando..."
-        [disabled]="serverInfo()?.state !== StateEnum.Running"
-      />
-      <button mat-icon-button (click)="sendCommand()" [disabled]="serverInfo()?.state !== StateEnum.Running">
-        <mat-icon>send</mat-icon>
-      </button>
-    </div>
-  </div>
-
+    </section>
+  }
 </div>
+
+@if (confirmTerminate()) {
+  <div class="modal-backdrop" (appBackdropClose)="confirmTerminate.set(false)">
+    <div class="modal modal--narrow" role="alertdialog" aria-modal="true" aria-labelledby="term-title">
+      <div class="modal__head"><h2 id="term-title">Terminare {{ serverName }}?</h2></div>
+      <div class="modal__body">
+        <p class="muted">Il pod viene fermato subito, senza salvare il mondo: puoi perdere i progressi non salvati. Usa «Arresta» per uno spegnimento pulito.</p>
+      </div>
+      <div class="modal__foot">
+        <button class="btn btn--ghost" type="button" (click)="confirmTerminate.set(false)">Annulla</button>
+        <button class="btn btn--solid-danger" type="button" (click)="terminate()"><mat-icon>power_settings_new</mat-icon> Termina</button>
+      </div>
+    </div>
+  </div>
+}

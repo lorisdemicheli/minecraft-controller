@@ -1,5 +1,5 @@
 /**
- * API
+ * Minecraft Controller API
  *
  * 
  *
@@ -18,6 +18,7 @@ export interface ServerInstanceDto {
     version?: string;
     modrinthProjectId?: string;
     curseforgePageUrl?: string;
+    readonly state?: ServerInstanceDto.StateEnum;
 }
 export namespace ServerInstanceDto {
     export const TypeEnum = {
@@ -28,6 +29,13 @@ export namespace ServerInstanceDto {
         Curseforge: 'CURSEFORGE'
     } as const;
     export type TypeEnum = typeof TypeEnum[keyof typeof TypeEnum];
+    export const StateEnum = {
+        Stopped: 'STOPPED',
+        Starting: 'STARTING',
+        Running: 'RUNNING',
+        Shutdown: 'SHUTDOWN'
+    } as const;
+    export type StateEnum = typeof StateEnum[keyof typeof StateEnum];
 }
 
 

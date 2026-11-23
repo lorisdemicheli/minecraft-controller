@@ -31,7 +31,9 @@ public class CustomUserDetailsService implements UserDetailsService {
     if (!admin.getUsername().equals(username)) {
       throw new UsernameNotFoundException("Utente non trovato: " + username);
     }
-    return admin;
+    // A copy for every call: after a successful login Spring Security erases the password of the
+    // user it authenticated, which would otherwise wipe the shared instance and lock the admin out.
+    return User.withUserDetails(admin).build();
   }
 
   private static boolean isBlank(String s) {

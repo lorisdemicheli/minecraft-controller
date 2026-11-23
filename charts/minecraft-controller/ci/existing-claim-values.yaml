@@ -1,0 +1,5 @@
+baseDomain: example.test
+storage:
+  existingClaim: my-minecraft-data
+  accessMode: ReadWriteOnce
+  initPermissions: false

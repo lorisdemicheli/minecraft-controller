@@ -1,0 +1,104 @@
+{{- if .Values.backup.enabled }}
+{{- $fullname := include "minecraft-controller.fullname" . -}}
+{{- $b := .Values.backup -}}
+{{- $backupClaim := default (printf "%s-backup" $fullname) $b.storage.existingClaim -}}
+{{- if not $b.storage.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $backupClaim }}
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ $b.storage.accessMode }}
+  {{- with $b.storage.className }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $b.storage.size | quote }}
+---
+{{- end }}
+# Archives the data volume, verifies the archive (gzip test + sha256) and applies the retention.
+# The source volume is mounted read-only: a backup can never modify the servers' data.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $fullname }}-backup
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ $b.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "minecraft-controller.selectorLabels" (dict "ctx" . "component" "backup") | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ .Values.storage.uid }}
+            runAsGroup: {{ .Values.storage.gid }}
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: {{ $b.image | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: RETENTION_DAYS
+                  value: {{ $b.retentionDays | quote }}
+                - name: EXCLUDE_TRASH
+                  value: {{ ternary "false" "true" $b.includeTrash | quote }}
+              command:
+                - sh
+                - -ec
+                - |
+                  name="minecraft-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+                  tmp="/backup/.${name}.partial"
+                  set -- --exclude=./.pending-deletion
+                  [ "$EXCLUDE_TRASH" = "true" ] && set -- "$@" --exclude=./.trash
+                  # tar exits 1 when files change while read (running servers): not fatal
+                  tar -czf "$tmp" -C /data "$@" . || [ $? -eq 1 ]
+                  gzip -t "$tmp"
+                  mv "$tmp" "/backup/$name"
+                  (cd /backup && sha256sum "$name" > "$name.sha256" && sha256sum -c "$name.sha256")
+                  if [ "$RETENTION_DAYS" -gt 0 ]; then
+                    find /backup -maxdepth 1 -name 'minecraft-*.tar.gz*' -mtime +"$RETENTION_DAYS" -print -delete
+                  fi
+                  echo "OK /backup/$name"; ls -lh /backup
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: backup
+                  mountPath: /backup
+              {{- with $b.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: {{ include "minecraft-controller.claimName" . }}
+                readOnly: true
+            - name: backup
+              persistentVolumeClaim:
+                claimName: {{ $backupClaim }}
+{{- end }}

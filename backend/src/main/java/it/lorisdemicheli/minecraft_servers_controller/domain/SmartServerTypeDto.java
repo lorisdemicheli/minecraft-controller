@@ -3,6 +3,8 @@ package it.lorisdemicheli.minecraft_servers_controller.domain;
 import java.util.ArrayList;
 import java.util.List;
 import io.kubernetes.client.openapi.models.V1EnvVar;
+import io.kubernetes.client.openapi.models.V1EnvVarSource;
+import io.kubernetes.client.openapi.models.V1SecretKeySelector;
 import it.lorisdemicheli.minecraft_servers_controller.config.MinecraftServerOptions;
 import lombok.RequiredArgsConstructor;
 
@@ -49,7 +51,15 @@ public enum SmartServerTypeDto {
     public List<V1EnvVar> specificEnv(ServerInstanceDto instance,
         MinecraftServerOptions serverOptions) {
       List<V1EnvVar> envs = new ArrayList<>();
-      envs.add(new V1EnvVar().name("CF_API_KEY").value(serverOptions.getCurseForgeApiKey()));
+      MinecraftServerOptions.SecretRef secret = serverOptions.getCurseForgeApiKeySecret();
+      if (secret != null && secret.isSet()) {
+        // the key stays in its Secret: it is not readable from the StatefulSet
+        envs.add(new V1EnvVar().name("CF_API_KEY")
+            .valueFrom(new V1EnvVarSource().secretKeyRef(
+                new V1SecretKeySelector().name(secret.getName()).key(secret.getKey()))));
+      } else {
+        envs.add(new V1EnvVar().name("CF_API_KEY").value(serverOptions.getCurseForgeApiKey()));
+      }
       envs.add(new V1EnvVar().name("CF_PAGE_URL").value(instance.getCurseforgePageUrl()));
       return envs;
     }

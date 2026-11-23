@@ -11,9 +11,9 @@
 	</parent>
 	<groupId>it.lorisdemicheli</groupId>
 	<artifactId>minecraft-servers-controller</artifactId>
-	<version>1.0.0</version>
+	<version>1.1.0</version>
 	<name>minecraft-servers-controller</name>
-	<description>Demo project for Spring Boot</description>
+	<description>Kubernetes controller for Minecraft servers</description>
 	<url />
 	<licenses>
 		<license />
@@ -36,7 +36,7 @@
 	<dependencies>
 		<dependency>
 			<groupId>io.kubernetes</groupId>
-			<artifactId>client-java-spring-integration</artifactId>
+			<artifactId>client-java</artifactId>
 			<version>${kubernetes-client.version}</version>
 		</dependency>
 		<dependency>
@@ -46,6 +46,15 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+		<!-- liveness/readiness probes and metrics (served on the management port only) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
 		<!-- Reactor is only used for the two SSE streams (logs, info); everything else is blocking -->
 		<dependency>
@@ -92,6 +101,11 @@
 		<dependency>
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.projectreactor</groupId>
+			<artifactId>reactor-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

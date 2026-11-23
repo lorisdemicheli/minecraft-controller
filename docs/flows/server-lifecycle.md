@@ -2,209 +2,143 @@
 
 ## Descrizione
 
-Gestione completa di un server Minecraft: creazione, lettura, aggiornamento, eliminazione, avvio, stop e terminazione immediata. Ogni server corrisponde a una coppia di risorse Kubernetes (StatefulSet + Service).
+Gestione completa di un server Minecraft: creazione, lettura, aggiornamento, eliminazione, avvio, stop e terminazione immediata. Ogni server corrisponde a una coppia di risorse Kubernetes (StatefulSet + Service) e a una cartella sul volume condiviso.
+
+`ServerService` valida e converte i DTO; `ServerLifecycleManager` esegue le operazioni multi-step con lock per nome, compensazione e recupero (vedi [ADR-003](../adr/adr-003-lifecycle-compensation.md)).
 
 ## Endpoint
 
-| Metodo | Path | Operazione |
-|---|---|---|
-| `GET` | `/servers` | Lista tutti i server |
-| `GET` | `/servers/{name}` | Leggi un server |
-| `POST` | `/servers` | Crea un server |
-| `PUT` | `/servers/{name}` | Aggiorna un server |
-| `DELETE` | `/servers/{name}?deleteData=true` | Elimina un server |
-| `POST` | `/servers/{name}/console/start` | Avvia (replicas → 1) |
-| `POST` | `/servers/{name}/console/stop` | Stop graceful (replicas → 0) |
-| `POST` | `/servers/{name}/console/terminate` | Kill immediato |
+| Metodo | Path | Operazione | Risposta |
+|---|---|---|---|
+| `GET` | `/servers` | Lista tutti i server | 200 |
+| `GET` | `/servers/{name}` | Leggi un server | 200 |
+| `POST` | `/servers` | Crea un server | 201 + `Location` |
+| `PUT` | `/servers/{name}` | Aggiorna un server (un server acceso si riavvia) | 200 |
+| `DELETE` | `/servers/{name}?deleteData=true` | Elimina un server | 204, oppure **202** se i file andranno nel cestino appena il pod si sarà fermato |
+| `POST` | `/servers/{name}/console/start` | Avvia (replicas → 1) | 204 |
+| `POST` | `/servers/{name}/console/stop` | Stop graceful (replicas → 0) | 204 |
+| `POST` | `/servers/{name}/console/terminate` | Kill immediato | 204 |
 
 ---
 
-## Flusso: Creazione Server
+## Creazione
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant SC as ServerController
     participant SS as ServerService
-    participant SN as ServerNames
+    participant LM as ServerLifecycleManager
     participant ST as ServerStorage
-    participant SMF as ServerManifestFactory
     participant KG as KubernetesGateway
-    participant K8s as Kubernetes API
 
-    C->>SC: POST /servers {ServerInstanceDto}
-    SC->>SS: create(dto)
-
-    SS->>SS: validate(dto, creating=true)
-    SS->>SN: requireNew(dto.name)
-    alt Nome non valido o riservato
-        SN-->>SS: InvalidRequestException / ConflictException
-        SS-->>C: 400 / 409
+    C->>SS: POST /servers {dto}
+    SS->>SS: validate (nome, risorse, EULA, versione, Modrinth/CurseForge)
+    SS->>LM: create(dto)  [lock sul nome]
+    LM->>ST: isPendingDeletion? → 409
+    LM->>KG: findStatefulSet → esiste: 409
+    LM->>ST: freeBytes < minFreeGb → 409
+    LM->>ST: createServerDir → dirCreated (false = dati adottati)
+    LM->>KG: createService
+    alt 409 AlreadyExists e Service gestito dal controller
+        LM->>LM: adotta il Service orfano di un create interrotto
+    else 409 e Service non gestito
+        LM-->>C: 409
+    else 503 (esito incerto)
+        LM->>KG: findService → presente? prosegui : errore
     end
-
-    SS->>ST: freeBytes()
-    alt Spazio insufficiente (< minFreeGb)
-        SS-->>C: 409 ConflictException
+    LM->>KG: createStatefulSet (replicas=0)
+    alt 503 (esito incerto)
+        LM->>KG: findStatefulSet con la stessa config? → successo
     end
-
-    SS->>ST: createServerDir(name)
-    SS->>SMF: service(dto)
-    SMF-->>SS: V1Service
-    SS->>KG: createService(namespace, service)
-    KG->>K8s: POST /api/v1/namespaces/{ns}/services
-    alt Già esiste
-        K8s-->>KG: 409
-        KG-->>SS: ResourceAlreadyExistsException
-        SS-->>C: 409
+    alt errore
+        LM->>KG: nessuno StatefulSet? → deleteService (se gestito)
+        LM->>ST: deleteServerDirIfEmpty (solo se creata ora)
+        LM-->>C: errore originale (errori di rollback come "suppressed" + log)
     end
-
-    SS->>SMF: statefulSet(dto)
-    SMF-->>SS: V1StatefulSet (replicas=0, config in annotation)
-    SS->>KG: createStatefulSet(namespace, statefulSet)
-    KG->>K8s: POST /apis/apps/v1/namespaces/{ns}/statefulsets
-
-    alt Creazione StatefulSet fallisce
-        K8s-->>KG: errore
-        KG-->>SS: eccezione
-        SS->>KG: deleteService(namespace, name) ← rollback
-        SS-->>C: eccezione originale
-    end
-
-    SS->>SS: toDto(sts) → readConfig + ServerStates.of()
-    SS-->>SC: ServerInstanceDto (state=STOPPED)
-    SC-->>C: 201 Created + Location header
+    LM-->>C: 201 ServerInstanceDto (state=STOPPED)
 ```
 
-**Nota**: il server viene creato con `replicas=0` (fermo). Deve essere esplicitamente avviato.
+Garanzie:
+- non vengono mai cancellati dati o risorse di un server esistente: il rollback non fa nulla se esiste uno StatefulSet con quel nome, e la cartella viene rimossa solo se creata da questa chiamata **e** vuota;
+- se il rollback stesso fallisce (API giù) la cartella viene lasciata e il Service orfano verrà rimosso dalla riconciliazione;
+- ripetere il create dopo un'interruzione funziona: Service orfano adottato, cartella riusata.
 
----
+## Aggiornamento
 
-## Flusso: Aggiornamento Server
+`PUT /servers/{name}`: il nome viene dal path. Read-modify-write dello StatefulSet (annotation di config, env, risorse, security context); in caso di conflitto di `resourceVersion` (modifica concorrente) rilettura e nuovo tentativo, fino a 3 volte. Se l'API non risponde, lo stato viene riletto: se la config è già quella richiesta l'aggiornamento è considerato riuscito.
+
+## Eliminazione
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant SC as ServerController
-    participant SS as ServerService
-    participant KG as KubernetesGateway
-    participant SMF as ServerManifestFactory
-    participant K8s as Kubernetes API
-
-    C->>SC: PUT /servers/{name} {ServerInstanceDto}
-    SC->>SS: update(name, dto)
-    SS->>SS: dto.setName(name)  ← name immutabile
-    SS->>SS: validate(dto, creating=false)
-    SS->>KG: getStatefulSet(namespace, name)
-    KG->>K8s: GET .../statefulsets/{name}
-    K8s-->>KG: V1StatefulSet
-    SS->>SMF: apply(sts, dto)
-    Note over SMF: Aggiorna solo annotation config,\nenv vars e resource limits.\nSelector e storage immutati.
-    SS->>KG: replaceStatefulSet(namespace, name, sts)
-    KG->>K8s: PUT .../statefulsets/{name}
-    Note over K8s: Se server in esecuzione,\nK8s riavvia il pod automaticamente.
-    SS-->>C: 200 ServerInstanceDto aggiornato
-```
-
----
-
-## Flusso: Eliminazione Server
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant SC as ServerController
-    participant SS as ServerService
+    participant LM as ServerLifecycleManager
     participant KG as KubernetesGateway
     participant ST as ServerStorage
-    participant K8s as Kubernetes API
 
-    C->>SC: DELETE /servers/{name}?deleteData=true
-    SC->>SS: delete(name, deleteData=true)
-    SS->>KG: deleteStatefulSet(namespace, name)
-    KG->>K8s: DELETE .../statefulsets/{name}
-
-    SS->>KG: deleteService(namespace, name)
-    KG->>K8s: DELETE .../services/{name}
-    Note over KG: ResourceNotFoundException ignorato\n(Service già eliminato)
-
-    alt deleteData=true
-        SS->>ST: moveToTrash(name)
-        Note over ST: Rinomina data/{name} → data/.trash/{name}-{millis}\nAtomic move se supportato dal filesystem
+    C->>LM: DELETE /servers/{name}?deleteData=true  [lock]
+    LM->>KG: podExists(name-0)
+    LM->>KG: deleteStatefulSet (404 = già cancellato)
+    LM->>KG: deleteService se gestito (404 = già cancellato)
+    alt niente da cancellare
+        LM-->>C: 404
     end
-
-    SS-->>C: 204 No Content
+    alt deleteData=false
+        LM-->>C: 204 (i dati restano, un nuovo server con lo stesso nome li adotta)
+    end
+    LM->>ST: markPendingDeletion(name)  [persistito sul volume]
+    alt il pod non esisteva
+        LM->>ST: moveToTrash + clearPendingDeletion
+        LM-->>C: 204
+    else pod in arresto
+        LM-->>C: 202
+        Note over LM: reconcile(): pod sparito e marker più vecchio di 30s → moveToTrash
+    end
 ```
 
-**Purga dati**: `TrashSweeper` controlla ogni ora i dati in `.trash` e rimuove permanentemente quelli con timestamp più vecchio di `trashRetentionHours` (default 24h).
+- Ogni passo è idempotente: se la cancellazione del Service fallisce, la stessa richiesta ripetuta completa il lavoro; i dati non vengono toccati finché StatefulSet e Service non sono stati rimossi.
+- I dati vanno nel cestino solo quando nessun pod può più scriverci (un pod cancellato forzatamente sparisce dall'API prima che il container sia davvero fermo: per questo il ritardo di sicurezza).
+- Finché la cancellazione è pendente non si può creare né avviare un server con lo stesso nome (409).
+- Se nel frattempo lo StatefulSet ricompare (creato a mano), il marker viene annullato e i dati restano al server.
+- Il cestino è svuotato da `TrashSweeper` dopo `storage.trash-retention-hours` (0 = mai).
 
----
+## Start / Stop / Terminate
 
-## Flusso: Start / Stop / Terminate
+| Operazione | Azione |
+|---|---|
+| start | 404 se lo StatefulSet non esiste; 409 se in cancellazione; ricrea la cartella se manca (altrimenti kubelet la creerebbe di root); `replicas=1` |
+| stop | `replicas=0`: il server ha `termination-grace-period-seconds` per salvare il mondo |
+| terminate | `replicas=0` + cancellazione del pod con grace 0 (pod già assente: ok) |
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant CC as ServerConsoleController
-    participant SS as ServerService
-    participant KG as KubernetesGateway
-    participant K8s as Kubernetes API
+Tutte e tre sono idempotenti e ritentate dal gateway in caso di errori transitori.
 
-    C->>CC: POST /servers/{name}/console/start
-    CC->>SS: start(name)
-    SS->>KG: scaleStatefulSet(namespace, name, replicas=1)
-    KG->>K8s: GET .../statefulsets/{name}/scale
-    KG->>K8s: PUT .../statefulsets/{name}/scale (spec.replicas=1)
-    CC-->>C: 204 No Content
+## Riconciliazione
 
-    C->>CC: POST /servers/{name}/console/stop
-    CC->>SS: stop(name)
-    SS->>KG: scaleStatefulSet(namespace, name, replicas=0)
-    Note over K8s: Il pod riceve SIGTERM; il terminationGracePeriod\n(default 120s) permette al server di salvare il mondo
-    CC-->>C: 204 No Content
+`ServerLifecycleManager.reconcile()` (ogni `lifecycle.reconcile-interval`, default 1 minuto):
+1. completa le cancellazioni pendenti (vedi sopra);
+2. rimuove i Service con label `managed-by=minecraft-controller` senza StatefulSet, più vecchi di `lifecycle.orphan-grace-period` (default 10 minuti, così un create in corso non viene mai toccato);
+3. aggiorna la metrica `minecraft_controller_servers{state}`.
 
-    C->>CC: POST /servers/{name}/console/terminate
-    CC->>SS: terminate(name)
-    SS->>SS: stop(name) → replicas=0
-    SS->>KG: deletePodNow(namespace, podName)
-    KG->>K8s: DELETE .../pods/{name}-0?gracePeriodSeconds=0
-    Note over KG: ResourceNotFoundException ignorato\n(nessun pod in esecuzione)
-    CC-->>C: 204 No Content
-```
+Gli errori (es. API giù) vengono loggati e la riconciliazione riprova al giro successivo.
 
-### Differenza Stop vs Terminate
+## Stato
 
-| | Stop | Terminate |
-|---|---|---|
-| Meccanismo | `replicas=0` | `replicas=0` + delete pod immediato |
-| Grace period | Rispettato (120s default) | Ignorato (`gracePeriodSeconds=0`) |
-| Rischio dati | Minimo (salvataggio mondo) | Alto (dati non salvati) |
-| Uso | Shutdown controllato | Server bloccato / non risponde |
-
----
-
-## Lettura Stato e Lista
-
-### `GET /servers/{name}` e `GET /servers`
-
-Lo stato (`ServerState`) viene derivato **esclusivamente** dal StatefulSet tramite `ServerStates.of(sts)`:
+Derivato dallo StatefulSet (`ServerStates`), senza lookup del pod:
 
 ```
 spec.replicas=0, status.replicas=0  → STOPPED
 spec.replicas=0, status.replicas>0  → SHUTDOWN (terminando)
-spec.replicas≥1, readyReplicas=0    → STARTING
-spec.replicas≥1, readyReplicas≥1    → RUNNING
+spec.replicas=1, readyReplicas=0    → STARTING
+spec.replicas=1, readyReplicas≥1    → RUNNING
 ```
 
-La configurazione del server viene letta dall'annotation JSON `it.lorisdemicheli/config` dello StatefulSet (`ServerManifestFactory.readConfig()`). StatefulSet senza annotation valida (creati da versioni precedenti) vengono **ignorati** silenziosamente nella lista, con un `log.warn`.
+`GET /servers` ignora (con un warning nel log) gli StatefulSet senza annotation di configurazione valida.
 
----
+## Errori
 
-## Gestione Eccezioni
-
-| Eccezione | HTTP | Causa |
-|---|---|---|
-| `ResourceNotFoundException` | 404 | Server non trovato nel namespace K8s |
-| `ResourceAlreadyExistsException` | 409 | Server già esistente (creazione duplicata) |
-| `ConflictException` | 409 | Spazio insufficiente, CurseForge API key mancante, config annotation corrotta |
-| `InvalidRequestException` | 400 | Validazione fallita (nome, CPU, memory, campi obbligatori) |
-| `ServerException` | 500 | Errore imprevisto del Kubernetes API |
+| Caso | HTTP |
+|---|---|
+| nome non valido, risorse fuori range, EULA non accettata, versione/modpack non validi | 400 |
+| server inesistente | 404 |
+| nome riservato o già usato, cancellazione pendente, spazio insufficiente, Service non gestito con lo stesso nome, CurseForge non configurato, modifica concorrente persistente | 409 |
+| API Kubernetes non disponibile dopo i retry | 503 |

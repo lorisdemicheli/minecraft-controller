@@ -1,0 +1,336 @@
+# Build, test and publish. Runs ONLY on pushes to main (or by hand): no pull_request,
+# no other branches. Images are pushed to GHCR only when every check passed.
+# Actions are pinned to commit SHAs (the comment gives the version).
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  KUBECONFORM_VERSION: v0.6.7
+  KUBECONFORM_SHA256: 95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73
+
+jobs:
+  # 1 ---------------------------------------------------------------------------------- backend
+  backend:
+    name: Backend build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Verify (compile + unit and integration tests)
+        run: ./mvnw -B -ntp verify
+
+      - name: Upload jar
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-jar
+          path: backend/target/minecraft-servers-controller-*.jar
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-test-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
+
+  # 2 --------------------------------------------------------------------------------- frontend
+  frontend:
+    name: Frontend build and test
+    needs: backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"   # Angular 21: Node ^20.19, ^22.12 or ^24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm test -- --watch=false
+      - run: npm run build
+
+      - name: Upload build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-dist
+          path: ui/dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  # 3 ------------------------------------------------------------------------------------- helm
+  helm:
+    name: Helm lint, template and validation
+    needs: frontend
+    runs-on: ubuntu-latest
+    env:
+      CHART: charts/minecraft-controller
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: v3.16.4
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL -o /tmp/kc.tgz "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  /tmp/kc.tgz" | sha256sum -c -
+          tar -xzf /tmp/kc.tgz -C /tmp kubeconform
+          sudo mv /tmp/kubeconform /usr/local/bin/
+
+      - name: Lint (every configuration in ci/)
+        run: |
+          for f in "$CHART"/ci/*.yaml; do
+            echo "::group::helm lint -f $f"
+            helm lint --strict "$CHART" -f "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Required values are enforced
+        run: |
+          if helm template minecraft-controller "$CHART" > /dev/null 2>&1; then
+            echo "::error::rendering without baseDomain must fail"; exit 1
+          fi
+          if helm template t "$CHART" --set baseDomain=example.test --set controller.replicas=2 > /dev/null 2>&1; then
+            echo "::error::controller.replicas=2 must be refused"; exit 1
+          fi
+          if helm template t "$CHART" --set baseDomain=example.test --set auth.jwtSecret=short > /dev/null 2>&1; then
+            echo "::error::a short auth.jwtSecret must be refused"; exit 1
+          fi
+          if helm template t "$CHART" --set baseDomain=example.test --set frontend.image.repository= > /dev/null 2>&1; then
+            echo "::error::frontend.enabled without an image must be refused"; exit 1
+          fi
+
+      - name: The console is told where the API is
+        run: |
+          helm template t "$CHART" --set baseDomain=example.test \
+            | grep -A1 'name: API_BASE_URL' | grep -q 'http://api.example.test' \
+            || { echo "::error::API_BASE_URL must default to the API Ingress"; exit 1; }
+          helm template t "$CHART" --set baseDomain=example.test --set ingress.tls.enabled=true \
+            | grep -A1 'name: API_BASE_URL' | grep -q 'https://api.example.test' \
+            || { echo "::error::API_BASE_URL must use https when TLS is enabled"; exit 1; }
+
+      - name: Template and validate the manifests
+        run: |
+          mkdir -p rendered
+          helm template minecraft-controller "$CHART" --set baseDomain=example.test > rendered/default.yaml
+          helm template minecraft-controller "$CHART" -f "$CHART/values-example.yaml" > rendered/example.yaml
+          for f in "$CHART"/ci/*.yaml; do
+            helm template minecraft-controller "$CHART" -f "$f" --namespace minecraft > "rendered/$(basename "$f")"
+          done
+          kubeconform -strict -summary -kubernetes-version 1.30.0 rendered/*.yaml
+
+      - name: Package the chart
+        run: helm package "$CHART" --destination dist
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-chart
+          path: |
+            dist/*.tgz
+            rendered/
+          retention-days: 30
+
+  # 4 ----------------------------------------------------------------------------------- docker
+  docker:
+    name: Docker ${{ matrix.component }} (build, scan, publish)
+    needs: [backend, frontend, helm]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - component: controller
+            context: backend
+            image: minecraft-controller
+            values: controller
+          - component: console
+            context: ui
+            image: minecraft-console
+            values: frontend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Image name (GHCR requires lowercase)
+        id: image
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE}" >> "$GITHUB_OUTPUT"
+          # same timestamps in every build of this commit: reproducible image layers
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,format=long,prefix=sha-
+            type=raw,value=main
+            type=raw,value=latest
+
+      - name: Build (local, for the scan)
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          load: true
+          push: false
+          tags: ${{ matrix.image }}:scan
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+      # Fixable CRITICAL vulnerabilities block the release; HIGH ones are only reported
+      # (often in the base image, without a fix yet). See docs/ci-cd.md.
+      - name: Scan (CRITICAL, fixable -> blocking)
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        with:
+          image-ref: ${{ matrix.image }}:scan
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Scan (HIGH, report only)
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        with:
+          image-ref: ${{ matrix.image }}:scan
+          severity: HIGH
+          exit-code: "0"
+          format: table
+          skip-setup-trivy: true
+
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+      - name: Summary
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          VALUES: ${{ matrix.values }}
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          {
+            echo "### Image published (${COMPONENT})"
+            echo ""
+            echo "- \`${IMAGE}:sha-${GITHUB_SHA}\` (immutable)"
+            echo "- \`${IMAGE}:main\`, \`${IMAGE}:latest\`"
+            echo "- digest \`${DIGEST}\`"
+            echo ""
+            echo '```bash'
+            echo "helm upgrade --install minecraft-controller charts/minecraft-controller \\"
+            echo "  --namespace minecraft --create-namespace -f my-values.yaml \\"
+            echo "  --set ${VALUES}.image.repository=${IMAGE} \\"
+            echo "  --set ${VALUES}.image.tag=sha-${GITHUB_SHA}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # 5 -------------------------------------------------------------------------------- chart
+  chart:
+    name: Publish the Helm chart (OCI)
+    needs: [helm, docker]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      CHART: charts/minecraft-controller
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: v3.16.4
+
+      # A chart version is published once: bump `version` in Chart.yaml to release a new one.
+      # (GHCR tags are mutable, so an existing version is skipped instead of being overwritten.)
+      - name: Publish (skipped when this version already exists)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          REGISTRY="oci://ghcr.io/${OWNER}/charts"
+          VERSION="$(helm show chart "$CHART" | sed -n 's/^version: //p')"
+          echo "$GH_TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
+
+          if out="$(helm show chart "${REGISTRY}/minecraft-controller" --version "$VERSION" 2>&1)"; then
+            echo "Chart ${VERSION} is already published: nothing to do."
+            echo "### Chart ${VERSION} already published (not overwritten)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          elif ! grep -qiE 'not found|404|manifest unknown|name unknown' <<< "$out"; then
+            echo "$out"
+            echo "::error::cannot tell whether chart ${VERSION} exists"; exit 1
+          fi
+
+          helm package "$CHART" --destination dist
+          helm push "dist/minecraft-controller-${VERSION}.tgz" "$REGISTRY"
+          {
+            echo "### Chart ${VERSION} published"
+            echo ""
+            echo '```bash'
+            echo "helm upgrade --install mc ${REGISTRY}/minecraft-controller --version ${VERSION} \\"
+            echo "  --namespace minecraft --create-namespace --set baseDomain=mc.example.com"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

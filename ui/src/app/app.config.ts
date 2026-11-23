@@ -4,29 +4,26 @@ import { provideHttpClient, withInterceptors, withFetch } from '@angular/common/
 import { provideClientHydration, withEventReplay } from '@angular/platform-browser';
 import { routes } from './app.routes';
 import { authInterceptor } from './core/interceptors/auth-interceptor';
-import { BASE_PATH, Configuration } from './core/api-client';
+import { errorInterceptor } from './core/interceptors/error-interceptor';
+import { Configuration } from './core/api-client';
 import { environment } from '../environments/environment';
+import { apiBasePath } from './core/runtime-config';
 
-export const CURSEFORGE_API_KEY = new InjectionToken<string>('CURSEFORGE_API_KEY');
+/** Maximum number of console lines kept in memory. */
+export const CONSOLE_MAX_LINES = new InjectionToken<number>('CONSOLE_MAX_LINES', {
+  providedIn: 'root',
+  factory: () => environment.consoleMaxLines,
+});
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
-    provideHttpClient(
-      withFetch(),
-      withInterceptors([authInterceptor])
-    ),
+    provideHttpClient(withFetch(), withInterceptors([authInterceptor, errorInterceptor])),
     provideClientHydration(withEventReplay()),
     {
       provide: Configuration,
-      useFactory: () => new Configuration({
-        basePath: environment.apiBasePath,
-      })
+      useFactory: () => new Configuration({ basePath: apiBasePath() }),
     },
-    {
-      provide: CURSEFORGE_API_KEY,
-      useValue: environment.curseforgeApiKey
-    }
-  ]
+  ],
 };

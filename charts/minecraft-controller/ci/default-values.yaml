@@ -1,0 +1,2 @@
+# Defaults; only the required value is set. Used by `helm lint`/`helm template` in the CI.
+baseDomain: example.test

@@ -1,0 +1,11 @@
+baseDomain: example.test
+ingress:
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    secretName: wildcard-example-test
+  api:
+    host: mc-api.example.test
+    tlsSecretName: api-cert

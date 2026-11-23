@@ -1,0 +1,84 @@
+.modal { min-height: min(640px, calc(100dvh - 32px)); }
+.stack { display: flex; flex-direction: column; gap: 22px; }
+.grow { flex: 1; }
+.link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.hint { color: var(--text-3); font-size: 13px; }
+
+.steps {
+  list-style: none; display: flex; gap: 8px; margin: 18px 24px 0; padding: 0;
+
+  li {
+    flex: 1; display: flex; align-items: center; gap: 10px; padding-top: 12px;
+    border-top: 3px solid var(--surface-3); color: var(--text-3); font-weight: 700; font-size: 12.5px;
+    &.done { border-color: var(--accent); color: var(--text-2); }
+    &.current { border-color: var(--accent); color: var(--text); }
+  }
+  &__n {
+    width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%;
+    background: var(--surface-3); font-size: 11px;
+    mat-icon { font-size: 14px; width: 14px; height: 14px; }
+  }
+  .done &__n, .current &__n { background: var(--accent); color: var(--accent-ink); }
+  @media (max-width: 560px) { &__label { display: none; } }
+}
+
+.types { border: 0; padding: 0; margin: 0; }
+.types__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.type {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px; text-align: left;
+  background: var(--surface-2); border: 1.5px solid var(--border); border-radius: var(--radius); cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  mat-icon { color: var(--text-3); margin-bottom: 6px; }
+  strong { font-size: 14px; }
+  small { color: var(--text-3); font-size: 12px; line-height: 1.35; }
+  &:hover:not(:disabled) { border-color: var(--border-strong); }
+  &.active { border-color: var(--accent); background: var(--accent-soft); mat-icon { color: var(--accent-text); } }
+  &:disabled { opacity: 0.45; cursor: not-allowed; }
+}
+
+.slider {
+  display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+  &__head { display: flex; justify-content: space-between; align-items: baseline;
+    label { font-weight: 700; } output { font-size: 20px; font-weight: 700; } }
+  &__scale { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-3); }
+}
+
+.search { display: flex; gap: 10px; }
+.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; }
+.hit {
+  width: 100%; display: flex; align-items: center; gap: 14px; padding: 10px 12px; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1.5px solid var(--border); border-radius: var(--radius);
+  img { border-radius: 10px; object-fit: cover; flex: none; }
+  &:hover { border-color: var(--border-strong); }
+  &.active { border-color: var(--accent); background: var(--accent-soft); }
+  &__text {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    strong { font-size: 14px; }
+    small { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+  &__ph {
+    width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 10px;
+    background: var(--surface-3); color: var(--text-3);
+    &.big { width: 52px; height: 52px; }
+  }
+  .badge mat-icon { font-size: 14px; width: 14px; height: 14px; }
+}
+
+.recap {
+  border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface-2);
+  &__head {
+    display: flex; align-items: center; gap: 14px; padding: 18px;
+    border-bottom: 1px solid var(--border);
+    img { border-radius: 12px; }
+    h3 { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+  }
+  dl { margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); }
+  dl div { padding: 14px 18px; border-bottom: 1px solid var(--border); &:nth-child(odd) { border-right: 1px solid var(--border); } &:nth-last-child(-n + 2) { border-bottom: 0; } }
+  dt { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
+  dd { margin: 2px 0 0; font-weight: 600; word-break: break-word; }
+}
+
+@media (max-width: 560px) {
+  .modal__foot { flex-wrap: wrap; }
+}

@@ -1,0 +1,27 @@
+# `helm test <release>`: the controller answers on its readiness endpoint.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "minecraft-controller.fullname" . }}-test-health
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: health
+      image: {{ .Values.storage.initImage | quote }}
+      command: ["wget", "-q", "-O-", "http://{{ include "minecraft-controller.fullname" . }}-controller:{{ .Values.controller.managementPort }}/actuator/health/readiness"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]

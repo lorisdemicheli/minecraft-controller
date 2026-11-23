@@ -10,6 +10,7 @@ public class StorageConfig {
 
   @Bean
   ServerStorage serverStorage(MinecraftServerOptions options) {
-    return new ServerStorage(Path.of(options.getStorage().getDataDir()));
+    return new ServerStorage(Path.of(options.getStorage().getDataDir()),
+        options.getStorage().getMinFreeGb() * 1024L * 1024 * 1024);
   }
 }

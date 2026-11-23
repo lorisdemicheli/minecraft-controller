@@ -1,5 +1,7 @@
+// The CurseForge key is no longer part of the bundle: the backend proxies the search
+// (it-lorisdemicheli.minecraft-servers.curse-forge-api-key).
 export const environment = {
   production: true,
   apiBasePath: 'http://localhost:9696',
-  curseforgeApiKey: 'LA_TUA_CHIAVE_CURSEFORGE'
+  consoleMaxLines: 5000,
 };

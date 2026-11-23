@@ -1,0 +1,81 @@
+// Design tokens. Light is the default; dark applies with [data-theme='dark'] (set by ThemeService and
+// by the inline script in index.html) or, before any choice, with the OS preference.
+
+@mixin dark-tokens {
+  color-scheme: dark;
+  --bg: #080a0e;
+  --bg-glow: rgba(61, 220, 132, 0.07);
+  --surface: #10131a;
+  --surface-2: #161a23;
+  --surface-3: #1d222d;
+  --border: #242a36;
+  --border-strong: #353d4d;
+  --text: #eef1f6;
+  --text-2: #a4adbe;
+  --text-3: #6c768a;
+  --accent: #3ddc84;
+  --accent-hover: #5ae79a;
+  --accent-ink: #03200f;
+  --accent-text: #4ee493;
+  --accent-soft: rgba(61, 220, 132, 0.13);
+  --danger: #ff5d6c;
+  --danger-soft: rgba(255, 93, 108, 0.14);
+  --warn: #ffb547;
+  --warn-soft: rgba(255, 181, 71, 0.14);
+  --info: #5aa9ff;
+  --info-soft: rgba(90, 169, 255, 0.14);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.65);
+  --scrim: rgba(3, 5, 8, 0.72);
+}
+
+:root {
+  color-scheme: light;
+  --bg: #eceff4;
+  --bg-glow: rgba(18, 161, 80, 0.09);
+  --surface: #ffffff;
+  --surface-2: #f5f6f9;
+  --surface-3: #eaedf2;
+  --border: #dde1e9;
+  --border-strong: #c2c9d6;
+  --text: #0c1118;
+  --text-2: #465065;
+  --text-3: #7a8499;
+  --accent: #12a150;
+  --accent-hover: #0e8a43;
+  --accent-ink: #ffffff;
+  --accent-text: #0a7a3a;
+  --accent-soft: rgba(18, 161, 80, 0.12);
+  --danger: #d92d3f;
+  --danger-soft: rgba(217, 45, 63, 0.1);
+  --warn: #b36b00;
+  --warn-soft: rgba(217, 140, 0, 0.14);
+  --info: #1d6fd6;
+  --info-soft: rgba(29, 111, 214, 0.1);
+  --shadow: 0 1px 2px rgba(12, 17, 24, 0.06), 0 8px 24px rgba(12, 17, 24, 0.06);
+  --shadow-pop: 0 24px 64px rgba(12, 17, 24, 0.28);
+  --scrim: rgba(12, 17, 24, 0.5);
+
+  // The console is a terminal: it stays dark in both themes.
+  --console-bg: #090b10;
+  --console-border: #232937;
+  --console-text: #d3d9e6;
+  --console-dim: #6c768a;
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --sidebar-w: 288px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    @include dark-tokens;
+  }
+}
+
+:root[data-theme='dark'] {
+  @include dark-tokens;
+}

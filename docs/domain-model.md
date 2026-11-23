@@ -128,8 +128,19 @@ Object extra;   // struttura MOTD raw di Minecraft
 
 ### `DiskUsageDto` (record)
 ```java
-record DiskUsageDto(long usedBytes, long volumeFreeBytes, long volumeTotalBytes)
+record DiskUsageDto(long usedBytes, long volumeFreeBytes, long volumeTotalBytes,
+                    boolean partial, int unreadableEntries)
 ```
+`partial=true`: alcune voci non erano leggibili, `usedBytes` è un limite inferiore.
+
+### `ExecResult` (record, interno)
+```java
+record ExecResult(int exitCode, String stdout, String stderr, boolean truncated)
+```
+`truncated`: l'output ha superato `kubernetes.exec-max-output-bytes` ed è stato tagliato.
+
+### `ServerLifecycleManager.DeleteOutcome` (enum, interno)
+`DELETED` (204), `DATA_KEPT` (204, `deleteData=false`), `DATA_PENDING` (202: dati nel cestino appena il pod si ferma).
 
 ### `FileEntry` (record)
 ```java
@@ -148,34 +159,38 @@ enum FileType { FILE, DIRECTORY, OTHER }
 - Usato come: nome risorsa K8s + hostname DNS `<name>.<baseDomain>` + directory sul volume
 
 ### Validazione Creazione Server
-1. Nome valido (non riservato)
+1. Nome valido (non riservato, non già usato, nessuna cancellazione pendente con quel nome)
 2. `type` non null
 3. `cpu` in [100, 64000] milli-CPU
 4. `memory` in [512, 262144] MB
-5. `modrinthProjectId` obbligatorio se `type = MODRINTH`
-6. `curseforgePageUrl` obbligatorio se `type = CURSEFORGE`
-7. CurseForge API key configurata se `type = CURSEFORGE`
-8. Spazio libero sul volume ≥ `minFreeGb` (default 2 GB)
+5. `eula = true` (solo alla creazione)
+6. `version`, se presente: `LATEST`, `SNAPSHOT`, `1.21`, `1.21.4`, `1.21-pre1`, `24w14a`…
+7. `modrinthProjectId` obbligatorio (id o slug) se `type = MODRINTH`
+8. `curseforgePageUrl` obbligatorio e della forma `https://www.curseforge.com/minecraft/modpacks/<slug>` se `type = CURSEFORGE`
+9. CurseForge API key configurata se `type = CURSEFORGE`
+10. Spazio libero sul volume ≥ `minFreeGb` (default 2 GB)
 
 ### Aggiornamento Server
 - Il `name` è immutabile: viene sovrascritto con il path parameter `{serverName}`
-- Solo env vars e resource limits vengono aggiornati (selector e storage untouched)
+- Vengono aggiornati annotation di config, env, risorse e security context (selector e storage invariati); conflitti di `resourceVersion` ritentati
 - Un server in esecuzione si riavvia automaticamente (K8s replace)
 
 ### Eliminazione Server
-- `deleteData=true` (default): i dati vengono spostati in `.trash/<name>-<millis>` e purged dopo `trashRetentionHours`
+- `deleteData=true` (default): dopo la rimozione di StatefulSet e Service, e solo quando il pod non esiste più, i dati vengono spostati in `.trash/<name>-<millis>` e purgati dopo `trashRetentionHours` (0 = mai). Fino ad allora un marker in `.pending-deletion/` blocca il riuso del nome
 - `deleteData=false`: i dati rimangono; un nuovo server con lo stesso nome li adotta
 
 ### Sicurezza Filesystem (`ServerStorage`)
-- Ogni path relativo viene risolto e validato contro la directory del server
-- Protezioni: null byte, `..`, symlink escape via `toRealPath()` sugli antenati
+- Ogni path relativo è normalizzato lessicalmente (`..` non può uscire dalla cartella) e poi percorso componente per componente con `SecureDirectoryStream` + `NOFOLLOW_LINKS` (ADR-004)
+- I symlink non vengono mai seguiti; scritture e upload sono atomici
 - Non è possibile cancellare o rinominare la directory root del server
 - Il rename non accetta path separator nel nuovo nome
 
 ### Risorse Pod
-- CPU: limite in milli-CPU (es. `1000m` = 1 core); nessun request (burst illimitato)
-- Memory: limite = `memory * 1.15` MB (15% overhead per metaspace e thread JVM)
-- Heap JVM = `MEMORY` env (MB)
+- Heap JVM = `MEMORY` env (`memory` MB)
+- Memory limit = heap + max(heap × `memory-overhead-percent`%, `memory-overhead-min-mb`) in MiB (default 15%, minimo 256 MiB)
+- CPU limit = `cpu` milli-CPU (disattivabile con `server-resources.cpu-limit-enabled=false`)
+- Requests = `cpu-request-percent` / `memory-request-percent` dei limiti (default 100%: requests = limits, QoS Guaranteed, come nelle versioni precedenti, in cui Kubernetes copiava i limits nelle requests)
+- Nota: prima il limite era espresso in `M` (10^6 byte) mentre l'heap è in MiB: ora entrambi sono in MiB
 
 ---
 

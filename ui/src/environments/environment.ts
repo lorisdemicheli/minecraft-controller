@@ -1,5 +1,6 @@
 export const environment = {
   production: false,
   apiBasePath: 'http://localhost:9696',
-  curseforgeApiKey: 'API_KEY_CURSEFORGE'
+  /** Lines kept in memory by the console (older ones are dropped). */
+  consoleMaxLines: 5000,
 };

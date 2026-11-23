@@ -1,59 +1,77 @@
-<div class="login-wrapper">
-  <div class="grid-bg"></div>
-
-  <div class="login-card">
-    <div class="brand">
-      <div class="brand-icon">
-        <span class="material-symbols-outlined">dns</span>
-      </div>
-      <h1>Server Panel</h1>
-      <p>Accesso riservato agli amministratori</p>
+<div class="login">
+  <section class="hero" aria-hidden="true">
+    <div class="hero__grid"></div>
+    <div class="hero__content">
+      <app-brand-mark [size]="56" />
+      <h1>Tutti i tuoi server.<br /><em>Un solo pannello.</em></h1>
+      <p>Avvia, monitora e gestisci i server Minecraft del cluster: console in tempo reale, prestazioni e file a portata di click.</p>
+      <ul class="hero__stats">
+        <li><strong>Live</strong><span>console e log</span></li>
+        <li><strong>CPU · RAM</strong><span>in tempo reale</span></li>
+        <li><strong>File</strong><span>editor integrato</span></li>
+      </ul>
     </div>
+    <div class="hero__blocks">
+      <i></i><i></i><i></i><i></i><i></i><i></i>
+    </div>
+  </section>
 
-    <form [formGroup]="form" (ngSubmit)="submit()">
-      <mat-form-field appearance="outline">
-        <mat-label>Username</mat-label>
-        <input matInput formControlName="username" autocomplete="username" />
-        <mat-icon matSuffix>person</mat-icon>
-      </mat-form-field>
+  <section class="panel">
+    <button class="btn btn--ghost btn--icon theme" type="button" [attr.aria-label]="theme.isDark() ? 'Tema chiaro' : 'Tema scuro'" (click)="theme.toggle()">
+      <mat-icon>{{ theme.isDark() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+    </button>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Password</mat-label>
-        <input
-          matInput
-          formControlName="password"
-          [type]="hidePassword ? 'password' : 'text'"
-          autocomplete="current-password"
-        />
-        <button
-          mat-icon-button
-          matSuffix
-          type="button"
-          (click)="hidePassword = !hidePassword"
-        >
-          <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
-        </button>
-      </mat-form-field>
+    <form class="form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <header>
+        <span class="eyebrow">Area riservata</span>
+        <h2>Accedi</h2>
+        <p class="muted">Solo per gli amministratori del pannello.</p>
+      </header>
 
-      @if (error) {
-        <div class="error-msg">
+      <div class="field">
+        <label for="username">Username</label>
+        <div class="input-icon">
+          <mat-icon>person</mat-icon>
+          <input id="username" class="input" formControlName="username" autocomplete="username" autocapitalize="off" spellcheck="false" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="input-icon pw">
+          <mat-icon>lock</mat-icon>
+          <input
+            id="password"
+            class="input"
+            formControlName="password"
+            [type]="hidePassword() ? 'password' : 'text'"
+            autocomplete="current-password"
+          />
+          <button
+            class="btn btn--ghost btn--icon btn--sm pw__toggle"
+            type="button"
+            [attr.aria-label]="hidePassword() ? 'Mostra la password' : 'Nascondi la password'"
+            (click)="togglePassword()"
+          >
+            <mat-icon>{{ hidePassword() ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      @if (error()) {
+        <div class="banner" role="alert">
           <mat-icon>error_outline</mat-icon>
-          {{ error }}
+          <span class="grow">{{ error() }}</span>
         </div>
       }
 
-      <button
-        mat-flat-button
-        type="submit"
-        class="submit-btn"
-        [disabled]="form.invalid || loading"
-      >
-        @if (loading) {
-          <span class="spinner"></span>
+      <button class="btn btn--primary btn--block submit" type="submit" [disabled]="form.invalid || loading()">
+        @if (loading()) {
+          <span class="spinner"></span> Accesso in corso…
         } @else {
-          Accedi
+          Accedi <mat-icon>arrow_forward</mat-icon>
         }
       </button>
     </form>
-  </div>
+  </section>
 </div>

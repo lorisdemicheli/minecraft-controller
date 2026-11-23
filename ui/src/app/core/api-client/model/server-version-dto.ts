@@ -1,5 +1,5 @@
 /**
- * API
+ * Minecraft Controller API
  *
  * 
  *

@@ -8,7 +8,9 @@ metadata:
     {{- include "minecraft-controller.labels" . | nindent 4 }}
     app.kubernetes.io/component: router
 spec:
+  {{- if not .Values.router.autoscaling.enabled }}
   replicas: {{ .Values.router.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "minecraft-controller.selectorLabels" $sel | nindent 6 }}
@@ -16,8 +18,19 @@ spec:
     metadata:
       labels:
         {{- include "minecraft-controller.selectorLabels" $sel | nindent 8 }}
+        {{- with .Values.router.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.router.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
-      serviceAccountName: {{ $fullname }}-router
+      serviceAccountName: {{ include "minecraft-controller.routerServiceAccount" . }}
+      {{- with .Values.router.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -41,6 +54,10 @@ spec:
           ports:
             - name: minecraft
               containerPort: 25565
+          {{- with .Values.router.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           readinessProbe:
             tcpSocket:
               port: minecraft
@@ -63,6 +80,10 @@ spec:
       {{- end }}
       {{- with .Values.router.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.router.topologySpreadConstraints }}
+      topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 ---
@@ -91,3 +112,42 @@ spec:
       {{- if and .Values.router.service.nodePort (ne .Values.router.service.type "ClusterIP") }}
       nodePort: {{ .Values.router.service.nodePort }}
       {{- end }}
+{{- if .Values.router.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $fullname }}-router
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $fullname }}-router
+  minReplicas: {{ .Values.router.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.router.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.router.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- if .Values.router.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullname }}-router
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+spec:
+  minAvailable: {{ .Values.router.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "minecraft-controller.selectorLabels" $sel | nindent 6 }}
+{{- end }}

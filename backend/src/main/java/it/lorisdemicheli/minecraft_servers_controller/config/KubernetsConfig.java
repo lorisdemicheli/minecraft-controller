@@ -12,13 +12,21 @@ import io.kubernetes.client.util.Config;
 @Configuration
 public class KubernetsConfig {
 
+  /**
+   * In the cluster the service account is used; {@code kubernetes.client.file} points to a
+   * kubeconfig for local development. Every call gets connect/read/write timeouts, so that a
+   * hanging API server cannot block a request forever.
+   */
   @Bean
-  ApiClient apiClient(KubernetesClientConfig cfg) throws IOException {
-    if (cfg.getFile() == null) {
-      return Config.defaultClient();
-    } else {
-      return Config.fromConfig(cfg.getFile());
-    }
+  ApiClient apiClient(KubernetesClientConfig cfg, MinecraftServerOptions options)
+      throws IOException {
+    ApiClient client =
+        cfg.getFile() == null ? Config.defaultClient() : Config.fromConfig(cfg.getFile());
+    var timeouts = options.getKubernetes();
+    client.setConnectTimeout((int) timeouts.getConnectTimeout().toMillis());
+    client.setReadTimeout((int) timeouts.getReadTimeout().toMillis());
+    client.setWriteTimeout((int) timeouts.getWriteTimeout().toMillis());
+    return client;
   }
 
   @Bean

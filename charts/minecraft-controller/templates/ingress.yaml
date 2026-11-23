@@ -1,8 +1,8 @@
 {{- if .Values.ingress.enabled }}
 {{- $fullname := include "minecraft-controller.fullname" . -}}
-{{- $base := include "minecraft-controller.baseDomain" . -}}
-{{- $tlsSecret := default (printf "%s-tls" $fullname) .Values.ingress.tls.secretName -}}
+{{- $defaultTls := default (printf "%s-tls" $fullname) .Values.ingress.tls.secretName -}}
 {{- if .Values.frontend.enabled }}
+{{- $host := include "minecraft-controller.consoleHost" . }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -10,7 +10,8 @@ metadata:
   labels:
     {{- include "minecraft-controller.labels" . | nindent 4 }}
     app.kubernetes.io/component: console
-  {{- with .Values.ingress.annotations }}
+  {{- $annotations := merge (dict) .Values.ingress.console.annotations .Values.ingress.annotations }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -20,12 +21,12 @@ spec:
   {{- end }}
   {{- if .Values.ingress.tls.enabled }}
   tls:
-    - secretName: {{ $tlsSecret }}
+    - secretName: {{ default $defaultTls .Values.ingress.console.tlsSecretName }}
       hosts:
-        - console.{{ $base }}
+        - {{ $host }}
   {{- end }}
   rules:
-    - host: console.{{ $base }}
+    - host: {{ $host }}
       http:
         paths:
           - path: /
@@ -37,6 +38,7 @@ spec:
                   number: 80
 ---
 {{- end }}
+{{- $apiHost := include "minecraft-controller.apiHost" . }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -55,12 +57,12 @@ spec:
   {{- end }}
   {{- if .Values.ingress.tls.enabled }}
   tls:
-    - secretName: {{ $tlsSecret }}
+    - secretName: {{ default $defaultTls .Values.ingress.api.tlsSecretName }}
       hosts:
-        - api.{{ $base }}
+        - {{ $apiHost }}
   {{- end }}
   rules:
-    - host: api.{{ $base }}
+    - host: {{ $apiHost }}
       http:
         paths:
           - path: /
@@ -69,5 +71,5 @@ spec:
               service:
                 name: {{ $fullname }}-controller
                 port:
-                  number: {{ .Values.controller.port }}
+                  name: http
 {{- end }}

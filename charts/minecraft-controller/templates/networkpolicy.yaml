@@ -1,0 +1,75 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $fullname := include "minecraft-controller.fullname" . -}}
+{{- $np := .Values.networkPolicy -}}
+# Controller: API only from the ingress controller, management port only from monitoring.
+# Egress is left open: it must reach the Kubernetes API (whose address depends on the cluster).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-controller
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "minecraft-controller.selectorLabels" (dict "ctx" . "component" "controller") | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace }}
+      ports:
+        - port: http
+    {{- if $np.monitoringNamespaces }}
+    - from:
+        {{- range $np.monitoringNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+      ports:
+        - port: management
+    {{- end }}
+---
+# Minecraft servers: only the router may connect (no direct access to the pods).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-servers
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      managed-by: minecraft-controller
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "minecraft-controller.selectorLabels" (dict "ctx" . "component" "router") | nindent 14 }}
+      ports:
+        - port: 25565
+{{- if .Values.frontend.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-console
+  labels:
+    {{- include "minecraft-controller.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "minecraft-controller.selectorLabels" (dict "ctx" . "component" "console") | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace }}
+      ports:
+        - port: http
+{{- end }}
+{{- end }}

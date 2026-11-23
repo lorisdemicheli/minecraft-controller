@@ -125,21 +125,21 @@ sequenceDiagram
 
     C->>FC: GET /servers/{name}/files/content?path=/server.properties
     FC->>ST: readText(name, path, maxBytes=2MB)
-    ST->>ST: requireRegularFile(resolved)
-    ST->>Vol: Files.size(file)
+    ST->>Vol: apre il file (SecureDirectoryStream, NOFOLLOW su ogni componente)
+    ST->>Vol: legge al massimo 2 MB + 1 byte
     alt Dimensione > 2 MB
         ST-->>FC: InvalidRequestException "File too large to edit"
         FC-->>C: 400 (scaricare il file invece di aprirlo nell'editor)
     end
-    ST->>Vol: Files.readAllBytes(file)
     Vol-->>ST: byte[]
     ST-->>FC: String (UTF-8)
     FC-->>C: 200 text/plain
 
     C->>FC: PUT /servers/{name}/files/content?path=/server.properties\nBody: "contenuto modificato"
     FC->>ST: writeText(name, path, content)
-    ST->>ST: Valida non è directory
-    ST->>Vol: Files.writeString(CREATE|TRUNCATE|WRITE)
+    ST->>ST: Valida: non è directory né symlink
+    ST->>Vol: scrive .mc-controller-tmp-<uuid> nella stessa cartella
+    ST->>Vol: renameat atomico sul file (permessi preservati)
     FC-->>C: 204 No Content
 ```
 
@@ -147,15 +147,18 @@ sequenceDiagram
 
 ## Regole di Sicurezza e Validazione
 
-Tutte le operazioni passano per `ServerStorage.resolve(server, rel, leafMayBeLink)`:
+Vedi [ADR-004](../adr/adr-004-secure-directory-stream.md). Il contenuto delle cartelle dei server è scritto da Minecraft e dai plugin: è considerato non fidato e può cambiare in qualunque momento.
 
-1. **Null byte**: path con `\0` → `InvalidRequestException "Invalid path"`
-2. **Backslash**: normalizzati in forward slash
-3. **Escape lessicale**: `normalize()` dopo `resolve()` → se il risultato non parte dalla dir del server → `InvalidRequestException "Path escapes the server directory"`
-4. **Symlink escape**: il sistema risolve `toRealPath()` sugli antenati esistenti del path e verifica che stiano dentro la dir del server → previene symlink che puntano fuori
-5. **Root directory**: cancellazione e rinomina della root del server sono rifiutate
-6. **Rename**: nessun path separator (`/` o `\`) nel nuovo nome
-7. **Copy directory-in-itself**: rilevata e rifiutata
+1. **Parsing lessicale** (`RelPath`): `\` trattato come separatore, componenti vuoti e `.` ignorati, `..` rimuove il componente precedente e non può risalire oltre la cartella del server (`InvalidRequestException "Path escapes the server directory"`); `\0` e nomi > 255 byte rifiutati. Un path assoluto (`/a/b`) è relativo alla cartella del server.
+2. **Nessun path risolto dal sistema operativo**: la cartella del server viene aperta dalla radice del volume con `NOFOLLOW_LINKS`, poi ogni componente con `SecureDirectoryStream.newDirectoryStream(name, NOFOLLOW_LINKS)`; file aperti, cancellati e rinominati relativamente al descrittore della cartella (`openat`, `unlinkat`, `renameat`). Un symlink **in qualunque posizione** fa fallire l'operazione con 400, anche se è stato creato dopo i controlli (TOCTOU).
+3. **Symlink**: elencati come `OTHER`, si possono rinominare e cancellare (si rimuove il link, mai il target); non vengono mai letti, scritti, attraversati o copiati (la copia di una cartella li salta).
+4. **Scritture atomiche**: `writeText` e `upload` scrivono un file temporaneo nella stessa cartella e lo rinominano sul target; un errore a metà non lascia file parziali né temporanei, la versione precedente resta intatta.
+5. **Upload**: streaming verso disco (mai l'intero file in memoria), nome ridotto all'ultimo componente e validato (no `.`, `..`, caratteri di controllo); rifiutato se lascerebbe meno di `storage.min-free-gb` liberi.
+6. **Root directory**: cancellazione e rinomina della root del server sono rifiutate.
+7. **Rename**: nessun separatore nel nuovo nome; target esistente → 409.
+8. **Copy directory-in-itself** rilevata e rifiutata; una copia fallita viene rimossa.
+9. **Concorrenza**: scritture concorrenti sullo stesso file producono sempre uno dei contenuti completi (l'ultimo rename vince); una cartella che cambia durante una cancellazione viene ritentata, poi 409.
+10. **Limite noto**: Java non espone `mkdirat`, quindi la *creazione* di directory usa il path (subito dopo aver aperto i genitori senza seguire link) e la directory creata viene riaperta con NOFOLLOW. In una race estrema si potrebbe creare una directory vuota fuori posto, mai leggere o scrivere file.
 
 ---
 
@@ -169,13 +172,16 @@ sequenceDiagram
     participant Vol as Volume
 
     C->>FC: GET /servers/{name}/files/usage
-    FC->>ST: usedBytes(name)
-    ST->>Vol: Files.walkFileTree (somma size file regolari)
+    FC->>ST: usage(name)
+    ST->>Vol: visita con SecureDirectoryStream (somma size file regolari, link ignorati)
+    Note over ST: voci illeggibili contate, non ignorate in silenzio
     ST->>ST: freeBytes() → FileStore.getUsableSpace()
     ST->>ST: totalBytes() → FileStore.getTotalSpace()
-    FC->>FC: new DiskUsageDto(used, free, total)
-    FC-->>C: 200 {usedBytes, volumeFreeBytes, volumeTotalBytes}
+    FC->>FC: new DiskUsageDto(used, free, total, partial, unreadableEntries)
+    FC-->>C: 200 {usedBytes, volumeFreeBytes, volumeTotalBytes, partial, unreadableEntries}
 ```
+
+Con `partial=true` il valore `usedBytes` è un limite inferiore (e un warning viene loggato).
 
 ---
 
@@ -185,5 +191,5 @@ sequenceDiagram
 |---|---|---|
 | `ResourceNotFoundException` | 404 | Directory/file non trovato, parent non trovato |
 | `InvalidRequestException` | 400 | Path non valido, non è file regolare, file troppo grande, nome con separator |
-| `ConflictException` | 409 | Directory già esiste (mkdir), file già esiste (rename/copy) |
+| `ConflictException` | 409 | Directory già esiste (mkdir), file già esiste (rename/copy), spazio insufficiente (upload), permesso negato dal filesystem |
 | `MaxUploadSizeExceededException` | 413 | File upload > 1 GB |

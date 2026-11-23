@@ -3,53 +3,37 @@ package it.lorisdemicheli.minecraft_servers_controller.service;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import io.kubernetes.client.openapi.models.V1StatefulSet;
 import it.lorisdemicheli.minecraft_servers_controller.config.MinecraftServerOptions;
 import it.lorisdemicheli.minecraft_servers_controller.domain.ServerInstanceDto;
 import it.lorisdemicheli.minecraft_servers_controller.exception.ConflictException;
 import it.lorisdemicheli.minecraft_servers_controller.exception.InvalidRequestException;
-import it.lorisdemicheli.minecraft_servers_controller.exception.ResourceNotFoundException;
 import it.lorisdemicheli.minecraft_servers_controller.storage.ServerNames;
-import it.lorisdemicheli.minecraft_servers_controller.storage.ServerStorage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/** Lifecycle of servers: create / read / update / delete and start / stop. */
+/**
+ * Application rules for servers: validation, reads and mapping between the API's DTOs and the
+ * Kubernetes objects. The multi-step operations (create, update, delete, start, stop) are run by
+ * {@link ServerLifecycleManager}, which handles locking, rollback and recovery.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ServerService {
 
-  private static final long GIB = 1024L * 1024 * 1024;
-
   private final KubernetesGateway kubernetes;
   private final ServerManifestFactory factory;
-  private final ServerStorage storage;
+  private final ServerLifecycleManager lifecycle;
   private final MinecraftServerOptions options;
 
   // ---------------------------------------------------------------- CRUD
 
   public ServerInstanceDto create(ServerInstanceDto dto) {
     validate(dto, true);
-    String name = dto.getName();
-
-    if (storage.freeBytes() < options.getStorage().getMinFreeGb() * GIB) {
-      throw new ConflictException("Not enough free space on the data volume");
-    }
-
-    storage.createServerDir(name);
-    kubernetes.createService(namespace(), factory.service(dto)); // 409 if the server exists
-    try {
-      return toDto(kubernetes.createStatefulSet(namespace(), factory.statefulSet(dto)));
-    } catch (RuntimeException e) {
-      try {
-        kubernetes.deleteService(namespace(), name);
-      } catch (RuntimeException cleanup) {
-        log.warn("Could not roll back the service of server {}", name, cleanup);
-      }
-      throw e;
-    }
+    return toDto(lifecycle.create(dto));
   }
 
   public ServerInstanceDto read(String name) {
@@ -72,50 +56,37 @@ public class ServerService {
   }
 
   public ServerInstanceDto update(String name, ServerInstanceDto dto) {
+    if (dto == null) {
+      throw new InvalidRequestException("Request body is required");
+    }
     dto.setName(name);
     validate(dto, false);
-    V1StatefulSet sts = statefulSet(name);
-    factory.apply(sts, dto);
-    return toDto(kubernetes.replaceStatefulSet(namespace(), name, sts));
+    return toDto(lifecycle.update(dto));
   }
 
   /**
    * Removes the server. With {@code deleteData} its folder is moved to the trash (purged after the
-   * retention period); otherwise the data stays in place and a new server with the same name
-   * adopts it.
+   * retention period) once the pod has stopped; otherwise the data stays in place and a new server
+   * with the same name adopts it.
    */
-  public void delete(String name, boolean deleteData) {
-    ServerNames.requireValid(name);
-    kubernetes.deleteStatefulSet(namespace(), name);
-    try {
-      kubernetes.deleteService(namespace(), name);
-    } catch (ResourceNotFoundException e) {
-      // already gone
-    }
-    if (deleteData) {
-      storage.moveToTrash(name);
-    }
+  public ServerLifecycleManager.DeleteOutcome delete(String name, boolean deleteData) {
+    return lifecycle.delete(ServerNames.requireValid(name), deleteData);
   }
 
   // ---------------------------------------------------------------- lifecycle
 
   public void start(String name) {
-    kubernetes.scaleStatefulSet(namespace(), ServerNames.requireValid(name), 1);
+    lifecycle.start(ServerNames.requireValid(name));
   }
 
   /** Graceful: the server gets time to save the world. */
   public void stop(String name) {
-    kubernetes.scaleStatefulSet(namespace(), ServerNames.requireValid(name), 0);
+    lifecycle.stop(ServerNames.requireValid(name));
   }
 
   /** Immediate kill. */
   public void terminate(String name) {
-    stop(name);
-    try {
-      kubernetes.deletePodNow(namespace(), ServerManifestFactory.podName(name));
-    } catch (ResourceNotFoundException e) {
-      // no pod: already stopped
-    }
+    lifecycle.terminate(ServerNames.requireValid(name));
   }
 
   // ---------------------------------------------------------------- internals
@@ -159,15 +130,26 @@ public class ServerService {
     if (dto.getMemory() < 512 || dto.getMemory() > 262_144) {
       throw new InvalidRequestException("memory must be between 512 and 262144 (MB)");
     }
+    if (creating && !dto.isEula()) {
+      throw new InvalidRequestException("The Minecraft EULA must be accepted (eula=true)");
+    }
+    if (!isBlank(dto.getVersion()) && !VERSION.matcher(dto.getVersion()).matches()) {
+      throw new InvalidRequestException(
+          "version must be LATEST, SNAPSHOT or a Minecraft version such as 1.21.4");
+    }
     switch (dto.getType()) {
       case MODRINTH -> {
-        if (isBlank(dto.getModrinthProjectId())) {
-          throw new InvalidRequestException("modrinthProjectId is required for MODRINTH servers");
+        if (isBlank(dto.getModrinthProjectId())
+            || !MODRINTH_PROJECT.matcher(dto.getModrinthProjectId()).matches()) {
+          throw new InvalidRequestException(
+              "modrinthProjectId is required for MODRINTH servers (project id or slug)");
         }
       }
       case CURSEFORGE -> {
-        if (isBlank(dto.getCurseforgePageUrl())) {
-          throw new InvalidRequestException("curseforgePageUrl is required for CURSEFORGE servers");
+        if (isBlank(dto.getCurseforgePageUrl())
+            || !CURSEFORGE_URL.matcher(dto.getCurseforgePageUrl()).matches()) {
+          throw new InvalidRequestException("curseforgePageUrl is required for CURSEFORGE servers"
+              + " (https://www.curseforge.com/minecraft/modpacks/...)");
         }
         if (isBlank(options.getCurseForgeApiKey())) {
           throw new ConflictException("The CurseForge API key is not configured on the server");
@@ -177,6 +159,13 @@ public class ServerService {
       }
     }
   }
+
+  /** Values accepted by the itzg image's VERSION. */
+  private static final Pattern VERSION =
+      Pattern.compile("(?i)LATEST|SNAPSHOT|[0-9]+(\\.[0-9]+){1,2}(-(pre|rc)[0-9]+)?|[0-9]{2}w[0-9]{2}[a-z]");
+  private static final Pattern MODRINTH_PROJECT = Pattern.compile("[A-Za-z0-9_.-]{1,100}");
+  private static final Pattern CURSEFORGE_URL =
+      Pattern.compile("https://(www\\.)?curseforge\\.com/minecraft/modpacks/[A-Za-z0-9_-]+/?");
 
   private static boolean isBlank(String s) {
     return s == null || s.isBlank();

@@ -1,0 +1,4 @@
+# API only: the console is disabled.
+baseDomain: example.test
+frontend:
+  enabled: false

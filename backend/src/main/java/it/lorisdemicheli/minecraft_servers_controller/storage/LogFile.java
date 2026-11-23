@@ -1,11 +1,15 @@
 package it.lorisdemicheli.minecraft_servers_controller.storage;
 
+import java.io.EOFException;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,8 +17,23 @@ import java.util.List;
  * Reads a growing text file (Minecraft's {@code logs/latest.log}) without any shell or Kubernetes
  * involvement. Only <em>complete</em> lines are ever returned; a half-written last line is picked
  * up by the next read.
+ *
+ * <p>The file is opened through a {@link Source} so that callers can open it safely (see
+ * {@link ServerStorage#logSource}); the {@link Path} variants are for trusted paths and tests.
  */
 public final class LogFile {
+
+  /** Opens the file for reading, or answers {@code null} if it does not exist right now. */
+  @FunctionalInterface
+  public interface Source {
+    SeekableByteChannel open() throws IOException;
+
+    static Source of(Path file) {
+      return () -> Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+          ? Files.newByteChannel(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
+          : null;
+    }
+  }
 
   /** Lines read plus the byte offset just after the last complete line. */
   public record Chunk(List<String> lines, long position) {
@@ -28,11 +47,15 @@ public final class LogFile {
 
   /** Last {@code n} complete lines of the file. */
   public static Chunk tail(Path file, int n) {
-    if (!Files.isRegularFile(file)) {
-      return new Chunk(List.of(), 0);
-    }
-    try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "r")) {
-      long end = endOfLastLine(raf, raf.length());
+    return tail(Source.of(file), n);
+  }
+
+  public static Chunk tail(Source source, int n) {
+    try (SeekableByteChannel raf = source.open()) {
+      if (raf == null) {
+        return new Chunk(List.of(), 0);
+      }
+      long end = endOfLastLine(raf, raf.size());
       if (end == 0) {
         return new Chunk(List.of(), 0);
       }
@@ -41,8 +64,7 @@ public final class LogFile {
       }
       long start = startOfLastLines(raf, end, n);
       byte[] buf = new byte[(int) (end - start)];
-      raf.seek(start);
-      raf.readFully(buf);
+      readFully(raf, start, buf, buf.length);
       return new Chunk(decode(buf, buf.length), end);
     } catch (IOException e) {
       throw new UncheckedIOException(e);
@@ -54,6 +76,10 @@ public final class LogFile {
    * the {@code limit} lines before them.
    */
   public static List<String> window(Path file, int limit, int skip) {
+    return window(Source.of(file), limit, skip);
+  }
+
+  public static List<String> window(Source file, int limit, int skip) {
     if (limit <= 0) {
       return List.of();
     }
@@ -70,19 +96,22 @@ public final class LogFile {
    * disappeared, reading restarts from the beginning.
    */
   public static Chunk readFrom(Path file, long position) {
-    if (!Files.isRegularFile(file)) {
-      return new Chunk(List.of(), 0);
-    }
-    try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "r")) {
-      long size = raf.length();
+    return readFrom(Source.of(file), position);
+  }
+
+  public static Chunk readFrom(Source source, long position) {
+    try (SeekableByteChannel raf = source.open()) {
+      if (raf == null) {
+        return new Chunk(List.of(), 0);
+      }
+      long size = raf.size();
       long from = size < position ? 0 : position;
       if (size == from) {
         return new Chunk(List.of(), from);
       }
       int len = (int) Math.min(size - from, MAX_READ);
       byte[] buf = new byte[len];
-      raf.seek(from);
-      raf.readFully(buf);
+      readFully(raf, from, buf, len);
 
       int lastNewline = -1;
       for (int i = len - 1; i >= 0; i--) {
@@ -102,14 +131,24 @@ public final class LogFile {
   }
 
   /** Offset just after the last '\n', or 0 if there is none. */
-  private static long endOfLastLine(RandomAccessFile raf, long size) throws IOException {
+  private static void readFully(SeekableByteChannel ch, long position, byte[] buf, int len)
+      throws IOException {
+    ByteBuffer target = ByteBuffer.wrap(buf, 0, len);
+    ch.position(position);
+    while (target.hasRemaining()) {
+      if (ch.read(target) < 0) {
+        throw new EOFException();
+      }
+    }
+  }
+
+  private static long endOfLastLine(SeekableByteChannel raf, long size) throws IOException {
     byte[] buf = new byte[BLOCK];
     long pos = size;
     while (pos > 0) {
       int len = (int) Math.min(BLOCK, pos);
       pos -= len;
-      raf.seek(pos);
-      raf.readFully(buf, 0, len);
+      readFully(raf, pos, buf, len);
       for (int i = len - 1; i >= 0; i--) {
         if (buf[i] == '\n') {
           return pos + i + 1;
@@ -120,15 +159,15 @@ public final class LogFile {
   }
 
   /** Offset where the last {@code n} lines (ending at {@code end}) begin. */
-  private static long startOfLastLines(RandomAccessFile raf, long end, int n) throws IOException {
+  private static long startOfLastLines(SeekableByteChannel raf, long end, int n)
+      throws IOException {
     byte[] buf = new byte[BLOCK];
     long pos = end;
     int seen = 0;
     while (pos > 0) {
       int len = (int) Math.min(BLOCK, pos);
       pos -= len;
-      raf.seek(pos);
-      raf.readFully(buf, 0, len);
+      readFully(raf, pos, buf, len);
       for (int i = len - 1; i >= 0; i--) {
         // the final '\n' (at end-1) is #1; the one before the first wanted line is #n+1
         if (buf[i] == '\n' && ++seen == n + 1) {

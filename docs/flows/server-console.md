@@ -5,7 +5,7 @@
 Accesso live a un server in esecuzione: informazioni runtime (CPU, memoria, giocatori), stream di log, invio comandi alla console Minecraft.
 
 Due stream SSE (Server-Sent Events) per il monitoring in tempo reale:
-- **Info stream**: stato + metriche ogni 10 secondi
+- **Info stream**: stato + metriche ogni 10 secondi (polling condiviso tra i client)
 - **Log stream**: tail live di `logs/latest.log` ogni 500ms
 
 Entrambi leggono direttamente dal **volume condiviso** o tramite **exec nel pod**, quindi funzionano indipendentemente dallo stato del server (anche se fermo per i log storici).
@@ -87,32 +87,37 @@ Conversioni:
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant CC as ServerConsoleController
     participant SCS as ServerConsoleService
+    participant IS as InfoStream (uno per server)
 
-    C->>CC: GET /servers/{name}/console/info/stream\nAccept: text/event-stream
-    CC->>SCS: info(name)  ← fail-fast 404 check
-    CC->>SCS: infoStream(name)
-    SCS->>SCS: ConcurrentHashMap.computeIfAbsent(name, ...)
-    Note over SCS: Se non esiste: crea Flux.interval(0, 10s)\nsu Schedulers.boundedElastic()\n.replay(1).refCount(1, 10s)
-    SCS-->>CC: Flux<ServerSentEvent<ServerInstanceInfoDto>>
-    CC-->>C: SSE stream aperto
+    C->>SCS: GET /servers/{name}/console/info/stream
+    SCS->>SCS: nessuno stream attivo? getStatefulSet → 404 subito
+    SCS->>IS: join (dentro ConcurrentHashMap.compute)
+    Note over IS: subscribers++, annulla l'eventuale timer di stop,<br/>avvia il polling se non è attivo
+    IS-->>C: ultimo valore (replay latest) + aggiornamenti
 
-    loop Ogni 10 secondi
-        SCS->>SCS: info(name)
-        alt Successo
-            SCS-->>C: event: {name}\ndata: {ServerInstanceInfoDto JSON}
-        else ResourceNotFoundException (server eliminato)
-            SCS-->>C: stream terminato
-        else Altro errore
-            SCS->>SCS: log.debug() + segnale vuoto (no disconnect)
+    loop ogni console.info-poll-interval (10s), un solo polling per server
+        IS->>IS: info(name)
+        alt successo
+            IS-->>C: event: {name} / data: {ServerInstanceInfoDto}
+        else server eliminato (404)
+            IS-->>C: stream completato, entry rimossa
+        else altro errore
+            IS->>IS: log debug + metrica, tick saltato (nessuna disconnessione)
         end
     end
+    loop ogni console.heartbeat-interval (15s)
+        IS-->>C: ":keepalive" (commento SSE)
+    end
 
-    Note over SCS: Quando l'ultimo subscriber si disconnette:\n10 secondi di cooldown → stream rimosso dalla cache
+    C->>IS: disconnessione → leave (compute): subscribers--
+    Note over IS: a 0 subscriber: timer di console.info-stream-grace-period (10s)<br/>scaduto senza nuovi viewer → polling fermato, entry rimossa
 ```
 
-**Condivisione stream**: il `Flux` è condiviso tra tutti i client che guardano lo stesso server (`.replay(1)` invia subito l'ultimo valore a nuovi subscriber). Questo evita N poll Kubernetes per N client simultanei.
+- Più client condividono lo stesso polling; la disconnessione di uno non interrompe gli altri.
+- Tutte le modifiche (creazione, join, leave, stop) avvengono in `compute` sulla chiave del server: nessuna race, nessuna entry orfana nella mappa (verificato da `ServerConsoleServiceTest`).
+- Il fail-fast non esegue più un `info()` completo (exec + metriche) per ogni client: solo un `getStatefulSet` quando lo stream non è già attivo.
+- Metriche: `minecraft_controller_sse_info_streams`, `..._sse_info_subscribers`, `..._sse_log_streams`.
 
 ---
 
@@ -129,7 +134,7 @@ sequenceDiagram
     C->>CC: POST /servers/{name}/console/commands\nContent-Type: text/plain\nBody: "say Hello"
 
     CC->>SCS: sendCommand(name, "say Hello")
-    SCS->>SCS: Valida comando non blank
+    SCS->>SCS: Valida: non vuoto, una sola riga, niente caratteri di controllo, max 1000
     SCS->>KG: getStatefulSet(namespace, name)
     SCS->>SCS: ServerStates.of(sts)
 
@@ -137,12 +142,13 @@ sequenceDiagram
         SCS-->>C: 409 ConflictException "Server is not running"
     end
 
-    SCS->>KG: exec(namespace, pod, container, "gosu", "minecraft", "mc-send-to-console", "say Hello")
+    SCS->>KG: exec(..., "gosu", "minecraft", "mc-send-to-console", "say Hello")
+    Note over SCS: con server-security.run-as-non-root: senza gosu
     KG->>K8s: exec nel pod {name}-0, container minecraft
-    Note over K8s: Timeout: 20 secondi
+    Note over K8s: deadline unica kubernetes.exec-timeout (20s),<br/>output limitato a exec-max-output-bytes
 
     alt exitCode != 0
-        SCS-->>C: 500 ServerException (stderr incluso)
+        SCS-->>C: 500 ServerException (stderr abbreviato)
     else exitCode == 0
         SCS-->>CC: void
         CC-->>C: 204 No Content
@@ -170,7 +176,7 @@ sequenceDiagram
 
     SCS-->>C: SSE: prime 50 righe storiche (batch iniziale)
 
-    loop Ogni 500ms (Schedulers.boundedElastic)
+    loop Ogni console.log-poll-interval (500ms)
         SCS->>LF: readFrom(path, position)
         LF->>Vol: Legge da offset position
         alt Nuove righe disponibili
@@ -186,6 +192,10 @@ sequenceDiagram
 ```
 
 ### Dettagli `LogFile`
+
+- Il file è aperto tramite `ServerStorage.logSource()`: nessun symlink viene seguito (un plugin che sostituisce `logs/latest.log` con un link a file di altri server ottiene uno stream vuoto).
+- Righe più lunghe di `console.max-log-line-length` sono troncate con il suffisso ` … [truncated]`; heartbeat `:keepalive` ogni `console.heartbeat-interval`.
+- Formato degli eventi invariato: un evento `data:` per riga.
 
 - `tail(path, n)`: legge a blocchi da 8KB dal fondo del file, raccoglie n righe complete
 - `readFrom(path, pos)`: legge max 1 MB di nuovi dati da `pos`; restituisce solo righe complete (terminazione `\n`); strip `\r`
@@ -206,6 +216,6 @@ Parametri: `limit` (default 100, max 5000), `skip` (default 0).
 |---|---|---|
 | `ResourceNotFoundException` | 404 | Server non trovato (StatefulSet o directory) |
 | `ConflictException` | 409 | Comando inviato a server non RUNNING |
-| `InvalidRequestException` | 400 | Comando vuoto o blank |
+| `InvalidRequestException` | 400 | Comando vuoto, multilinea, con caratteri di controllo o troppo lungo |
 | `ServerException` | 500 | Exec fallito nel pod (mc-send-to-console) |
 | Client disconnect (SSE) | — | `AsyncRequestNotUsableException` / IOException "Broken pipe": silenziosamente ignorato da `GlobalExceptionHandler` |

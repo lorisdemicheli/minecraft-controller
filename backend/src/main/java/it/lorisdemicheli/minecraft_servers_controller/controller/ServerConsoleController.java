@@ -64,8 +64,9 @@ public class ServerConsoleController {
     return ResponseEntity.noContent().build();
   }
 
+  /** One SSE event per log line (data only, as before) plus a comment as heartbeat when idle. */
   @GetMapping(value = "/logs", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-  public Flux<String> streamLogs(@PathVariable String serverName) {
+  public Flux<ServerSentEvent<String>> streamLogs(@PathVariable String serverName) {
     return console.logStream(serverName);
   }
 

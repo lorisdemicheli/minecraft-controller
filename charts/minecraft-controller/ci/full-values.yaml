@@ -1,0 +1,47 @@
+# Every optional feature enabled at once.
+baseDomain: example.test
+imagePullSecrets:
+  - name: regcred
+auth:
+  password: ci-password-not-secret
+  jwtSecret: ci-jwt-secret-ci-jwt-secret-ci-jwt-secret
+controller:
+  image:
+    tag: sha-0123456789abcdef0123456789abcdef01234567
+    pullPolicy: IfNotPresent
+  logFormat: json
+  metrics:
+    scrapeAnnotations: true
+  podSecurityContext:
+    runAsUser: 1001
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: controller
+servers:
+  runAsNonRoot: true
+  resources:
+    cpuRequestPercent: 50
+    cpuLimitEnabled: false
+router:
+  autoScale:
+    up: true
+    down: true
+  autoscaling:
+    enabled: true
+  podDisruptionBudget:
+    enabled: true
+  service:
+    type: NodePort
+    nodePort: 30565
+    externalTrafficPolicy: Local
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: ingress-nginx
+  monitoringNamespaces: [monitoring]
+backup:
+  enabled: true
+  retentionDays: 14

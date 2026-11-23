@@ -1,95 +1,175 @@
+# Default values of the minecraft-controller chart.
+# Every key is documented in README.md; values.schema.json validates them.
+# Do NOT put passwords or keys in a versioned copy of this file: use auth.existingSecret.
+
 # -- [REQUIRED] Base domain of the platform (e.g. example.com).
 # The console is served on console.<baseDomain>, the API on api.<baseDomain>
 # and every Minecraft server on <server-name>.<baseDomain>.
-# The installation fails if this is left empty.
-baseDomain: "mc.lorisdemicheli.it"
+baseDomain: ""
 
 nameOverride: ""
 fullnameOverride: ""
 
-# -- Pull secrets for the images below.
-imagePullSecrets:
-  - name: regcred   # created by install.sh (private Docker Hub repo)
+# -- Pull secrets for private images, e.g. [{name: regcred}] (see install.sh).
+imagePullSecrets: []
 
+# ------------------------------------------------------------------------------ storage
 storage:
   # -- Size of the ONE volume shared by all servers (each gets its own folder).
-  # Longhorn keeps several replicas, so it uses size x replicas on the nodes' disks.
   size: 50Gi
   # -- StorageClass. Empty = the cluster default.
-  className: longhorn
-  # -- ReadWriteMany lets servers run on any node (needs an RWX-capable class, e.g. Longhorn
-  # with the NFSv4 client installed on every node). ReadWriteOnce only works if every pod
-  # (controller and servers) ends up on the same node.
+  className: ""
+  # -- ReadWriteMany lets servers run on any node (needs an RWX-capable class: Longhorn with NFS,
+  # CephFS, NFS provisioners...). ReadWriteOnce only works if every pod using the volume
+  # (controller, servers, backup) runs on the same node.
   accessMode: ReadWriteMany
   # -- Use an existing PVC (in the release namespace) instead of creating one.
   existingClaim: ""
+  # -- Extra annotations of the created PVC.
+  annotations: {}
   # -- UID/GID the controller and the server processes run as (itzg default: 1000).
   uid: 1000
   gid: 1000
-  # -- chown the volume root to uid:gid before the controller starts.
+  # -- chown the volume root to uid:gid before the controller starts (an init container running
+  # as root: disable it with a Pod Security "restricted" namespace).
   initPermissions: true
   initImage: busybox:1.37
   # -- Deleted servers stay in <volume>/.trash for this long (hours) before being purged.
+  # 0 disables the automatic purge.
   trashRetentionHours: 24
-  # -- Creating a server is refused when the volume has less free space than this.
+  # -- Creating a server or uploading a file is refused below this free space (GB).
   minFreeGb: 2
 
+# ------------------------------------------------------------------------------ auth
 auth:
   # -- Username of the single admin account.
   username: admin
-  # -- Use an existing Secret instead of generating one.
-  # Required keys: `password`, `jwt-secret`. Optional key: `curseforge-api-key`.
-  # Recommended with GitOps (Argo CD, Flux, `helm template`): the auto-generated
-  # credentials rely on `lookup`, which returns nothing in those flows and would
-  # rotate the password on every render.
+  # -- Existing Secret with keys `password`, `jwt-secret` (>= 32 chars) and optionally
+  # `curseforge-api-key`. Recommended for production and GitOps: the generated credentials
+  # rely on `lookup`, which returns nothing with `helm template`, Argo CD or Flux.
   existingSecret: ""
-  # -- JWT lifetime in milliseconds (default 24h).
+  # -- Admin password, only when existingSecret is empty. Empty = random, generated once.
+  # Pass it with --set or a non-versioned values file, never commit it.
+  password: ""
+  # -- JWT signing key (>= 32 chars), only when existingSecret is empty. Empty = random.
+  jwtSecret: ""
+  # -- JWT lifetime in milliseconds (default 24h, between 1 minute and 30 days).
   jwtExpirationMs: 86400000
-  # -- CurseForge API key, needed only for CurseForge modpacks.
-  # Ignored when existingSecret is set.
+  # -- CurseForge API key, needed only for CurseForge modpacks. Ignored with existingSecret.
   curseForgeApiKey: ""
+  # -- Failed logins per client in loginWindow before answering 429.
+  loginMaxAttempts: 10
+  loginWindow: 5m
 
+# ------------------------------------------------------------------------------ RBAC
 rbac:
-  # -- Create Roles/RoleBindings for the controller and the router.
+  # -- Create Roles/RoleBindings (namespaced, least privilege) for the controller and the router.
   create: true
 
-# Backend (Spring Boot, port 8080)
+serviceAccount:
+  # -- Create the ServiceAccounts. If false, they must exist with the names below.
+  create: true
+  # -- Names; empty = <fullname>-controller / <fullname>-router.
+  controllerName: ""
+  routerName: ""
+  annotations: {}
+
+# ------------------------------------------------------------------------------ controller
+# Backend (Spring Boot): API on port 8080, health and metrics on managementPort.
 controller:
   image:
-    repository: lorisdemicheli/minecraft-controller
-    tag: dev
+    repository: ghcr.io/lorisdemicheli/minecraft-controller
+    # -- Image tag. Use sha-<commit> (published by the CI) for reproducible installs.
+    tag: main
     pullPolicy: Always
+  # -- Must stay 1: operations are coordinated inside the process (see docs/adr).
   replicas: 1
   port: 8080
-  resources: {}
+  managementPort: 8081
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      memory: 768Mi
+  # -- JVM options (heap as a percentage of the memory limit).
+  javaOpts: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+  # -- Log format: text or json (Elastic Common Schema, one JSON object per line).
+  logFormat: text
+  # -- Largest file accepted by the file manager upload.
+  maxUploadSize: 1GB
+  # -- Size of the /tmp emptyDir (uploads are buffered there): keep it above maxUploadSize.
+  tmpSizeLimit: 2Gi
+  # -- Allowed browser origins; empty = the console URL.
+  corsAllowedOrigins: []
+  metrics:
+    # -- Add prometheus.io/* annotations so that Prometheus scrapes /actuator/prometheus.
+    scrapeAnnotations: false
   extraEnv: []
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  securityContext: {}
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
 
-# Web console (Angular SSR / Node, port 4000).
-# NOTE: the API URL is compiled into the bundle (src/environments/*.ts);
-# the image must be built with apiBasePath = http://api.<baseDomain>.
+# ------------------------------------------------------------------------------ servers
+# Defaults applied by the controller to the Minecraft servers it creates.
+servers:
+  image: itzg/minecraft-server
+  # -- Time a server gets to save the world on stop before being killed.
+  terminationGracePeriodSeconds: 120
+  resources:
+    # -- CPU request as % of the chosen CPU (100 = requests equal limits, Guaranteed QoS).
+    cpuRequestPercent: 100
+    # -- false = no CPU limit (no throttling; the request still reserves the chosen CPU share).
+    cpuLimitEnabled: true
+    # -- Memory request as % of the memory limit.
+    memoryRequestPercent: 100
+    # -- Memory limit = heap + max(heap * overheadPercent / 100, overheadMinMb).
+    memoryOverheadPercent: 15
+    memoryOverheadMinMb: 256
+  # -- Run the Minecraft container as storage.uid with every capability dropped. Off by default:
+  # the itzg image normally starts as root and switches user by itself.
+  runAsNonRoot: false
+
+# ------------------------------------------------------------------------------ frontend
+# Web console (Angular SSR / Node, port 4000), served on console.<baseDomain>. The CI publishes the
+# image; the API address is not baked into it: the chart passes it at start-up (API_BASE_URL).
 frontend:
-  enabled: false   # no console image yet
+  # -- Install the console. Set false to run the API only.
+  enabled: true
   image:
-    repository: lorisdemicheli/minecraft-console
-    tag: latest
+    repository: ghcr.io/lorisdemicheli/minecraft-console
+    # -- Image tag. Use sha-<commit> (published by the CI) for reproducible installs.
+    tag: main
     pullPolicy: Always
+  # -- Public URL of the API as the browser reaches it. Empty = the API Ingress
+  # (http(s)://api.<baseDomain>, https when ingress.tls.enabled).
+  apiBaseUrl: ""
+  # -- Extra hostnames the console answers to. The console Ingress host and `localhost`
+  # (kubectl port-forward) are always allowed; any other Host header gets a 400.
+  allowedHosts: []
   replicas: 1
   port: 4000
   resources: {}
   extraEnv: []
+  podAnnotations: {}
+  podLabels: {}
   nodeSelector: {}
   tolerations: []
   affinity: {}
 
-# itzg/mc-router: routes <server>.<baseDomain> to the right server Service,
-# discovered through the `mc-router.itzg.me/externalServerName` annotation
-# that the controller puts on each server Service.
+# ------------------------------------------------------------------------------ router
+# itzg/mc-router: routes <server>.<baseDomain> to the right server Service, discovered through
+# the `mc-router.itzg.me/externalServerName` annotation that the controller puts on each Service.
 router:
   image:
     repository: itzg/mc-router
+    # -- Pin a release in production (latest moves).
     tag: latest
     pullPolicy: IfNotPresent
   replicas: 1
@@ -98,6 +178,15 @@ router:
     up: false
     # -- Stop a server (replicas 1 -> 0) when it is empty.
     down: false
+  # -- HorizontalPodAutoscaler of the router (replicas is then ignored).
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
   service:
     type: LoadBalancer
     port: 25565
@@ -106,26 +195,84 @@ router:
     # -- Set to `Local` to preserve client source IPs.
     externalTrafficPolicy: ""
     annotations: {}
-  resources: {}
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  topologySpreadConstraints: []
 
+# ------------------------------------------------------------------------------ ingress
 ingress:
   enabled: true
-  className: traefik   # k3s default; use "nginx" if you installed ingress-nginx
-  # -- Extra annotations for both Ingresses (e.g. cert-manager issuer).
+  className: traefik   # k3s default; "nginx" for ingress-nginx
+  # -- Annotations of both Ingresses (e.g. cert-manager.io/cluster-issuer).
   annotations: {}
   tls:
     enabled: false
-    # -- Secret holding the certificate. Empty = <fullname>-tls
-    # (a wildcard cert or cert-manager must provide it).
+    # -- Secret with the certificate of both hosts. Empty = <fullname>-tls
+    # (a wildcard certificate, or cert-manager through annotations).
     secretName: ""
   api:
-    # -- Extra annotations only for the API Ingress. Defaults are the ingress-nginx
-    # settings needed for SSE (console/log streams) and large file uploads.
+    # -- Host of the API. Empty = api.<baseDomain>.
+    host: ""
+    # -- Extra annotations only for the API Ingress. Defaults: ingress-nginx settings for SSE
+    # (console/log streams) and large uploads (ignored by other controllers).
     annotations:
       nginx.ingress.kubernetes.io/proxy-buffering: "off"
       nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-body-size: "1g"
+    # -- Certificate Secret of this host only (overrides tls.secretName).
+    tlsSecretName: ""
+  console:
+    # -- Host of the web console. Empty = console.<baseDomain>.
+    host: ""
+    annotations: {}
+    tlsSecretName: ""
+
+# ------------------------------------------------------------------------------ network policies
+networkPolicy:
+  # -- Restrict traffic: API/console only from the ingress controller, Minecraft servers only
+  # from the router. Requires a CNI that enforces NetworkPolicy.
+  enabled: false
+  # -- Namespace of the ingress controller (matched by kubernetes.io/metadata.name).
+  ingressControllerNamespace: kube-system
+  # -- Namespaces allowed to scrape the management port (health, metrics), by name.
+  monitoringNamespaces: []
+
+# ------------------------------------------------------------------------------ backup
+# Periodic archive of the data volume (tar.gz + sha256, verified after writing) on a second PVC.
+# The world files are copied while servers run: for a consistent copy prefer CSI snapshots or
+# stop the servers (see README.md, "Backup").
+backup:
+  enabled: false
+  schedule: "0 4 * * *"
+  # -- Archives older than this (days) are removed by the job. 0 = keep everything.
+  retentionDays: 7
+  image: alpine:3.20
+  # -- Also archive <volume>/.trash.
+  includeTrash: false
+  storage:
+    existingClaim: ""
+    size: 100Gi
+    className: ""
+    accessMode: ReadWriteOnce
+  resources: {}

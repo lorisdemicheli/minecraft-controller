@@ -9,6 +9,9 @@ metadata:
   annotations:
     # worlds must survive `helm uninstall`
     helm.sh/resource-policy: keep
+    {{- with .Values.storage.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   accessModes:
     - {{ .Values.storage.accessMode }}

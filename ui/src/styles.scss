@@ -1,27 +1,15 @@
 @use '@angular/material' as mat;
+@use 'styles/tokens';
+@use 'styles/components';
 
+// Material is only used for icons and the snack bar: it follows the color-scheme set by the tokens.
 html {
-  height: 100%;
   @include mat.theme((
     color: (
-      primary: mat.$azure-palette,
+      primary: mat.$green-palette,
       tertiary: mat.$blue-palette,
     ),
-    typography: Roboto,
+    typography: Inter,
     density: 0,
   ));
-}
-
-body {
-  color-scheme: light;
-  background-color: var(--mat-sys-surface);
-  color: var(--mat-sys-on-surface);
-  font: var(--mat-sys-body-medium);
-  margin: 0;
-  height: 100%;
-}
-
-// ← aggiungi solo questo
-* {
-  box-sizing: border-box;
 }

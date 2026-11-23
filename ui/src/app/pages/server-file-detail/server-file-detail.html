@@ -1,208 +1,184 @@
-<div class="files-wrapper">
+<div class="page">
+  <a class="back" [routerLink]="['/servers', serverName]"><mat-icon>arrow_back</mat-icon> {{ serverName }}</a>
 
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <mat-icon>dns</mat-icon>
-        <span>{{ serverName }}</span>
-      </div>
-  
-      <nav class="sidebar-nav">
-        <button class="nav-item active" (click)="navigateTo('/')">
-          <mat-icon>home</mat-icon>
-          <span>File</span>
-        </button>
-      </nav>
-  
-      <div class="sidebar-actions">
-        <button class="sidebar-btn" (click)="openModal('new-dir')">
-          <mat-icon>create_new_folder</mat-icon>
-          <span>Nuova cartella</span>
-        </button>
-        <button class="sidebar-btn" (click)="openModal('new-file')">
-          <mat-icon>note_add</mat-icon>
-          <span>Nuovo file</span>
-        </button>
-        <label class="sidebar-btn" [class.loading]="uploadLoading()">
-          <mat-icon>upload</mat-icon>
-          <span>Upload</span>
-          <input type="file" hidden (change)="onFileSelected($event)" />
-        </label>
-      </div>
-    </aside>
-  
-    <div class="content">
-      <div class="toolbar">
-        <div class="breadcrumb">
-          @for (crumb of breadcrumbs(); track crumb.path; let last = $last) {
-            @if (!last) {
-              <button class="crumb-btn" (click)="navigateTo(crumb.path)">{{ crumb.label }}</button>
-              <mat-icon class="crumb-sep">chevron_right</mat-icon>
-            } @else {
-              <span class="crumb-current">{{ crumb.label }}</span>
-            }
-          }
-        </div>
-        <div class="toolbar-right">
-          @if (loading()) { <span class="loading-text">Caricamento...</span> }
-          <button mat-icon-button (click)="loadDir(currentPath())" matTooltip="Aggiorna">
-            <mat-icon>refresh</mat-icon>
-          </button>
-        </div>
-      </div>
-  
-      <div class="file-grid">
-  
-        @if (folders().length > 0) {
-          <div class="section-label">Cartelle</div>
-          <div class="cards-grid">
-            @for (entry of folders(); track entry.name) {
-              <div class="card folder-card" (click)="openEntry(entry)">
-                <div class="card-icon"><mat-icon>folder</mat-icon></div>
-                <div class="card-info">
-                  <div class="card-name">{{ entry.name }}</div>
-                  <div class="card-meta">{{ formatDate(entry.lastModified) }}</div>
-                </div>
-                <div class="card-menu">
-                  <button mat-icon-button class="menu-btn"
-                    (click)="openModal('rename', entry); $event.stopPropagation()" matTooltip="Rinomina">
-                    <mat-icon>drive_file_rename_outline</mat-icon>
-                  </button>
-                  <button mat-icon-button class="menu-btn danger"
-                    (click)="openModal('delete', entry); $event.stopPropagation()" matTooltip="Elimina">
-                    <mat-icon>delete</mat-icon>
-                  </button>
-                </div>
-              </div>
-            }
-          </div>
-        }
-  
-        @if (files().length > 0) {
-          <div class="section-label">File</div>
-          <div class="cards-grid">
-            @for (entry of files(); track entry.name) {
-              <div class="card file-card" (click)="openEntry(entry)">
-                <div class="card-icon"><mat-icon>{{ getFileIcon(entry) }}</mat-icon></div>
-                <div class="card-info">
-                  <div class="card-name">{{ entry.name }}</div>
-                  <div class="card-meta">{{ formatSize(entry.sizeBytes) }} · {{ formatDate(entry.lastModified) }}</div>
-                </div>
-                <div class="card-menu">
-                  @if (isTextFile(entry.name!)) {
-                    <button mat-icon-button class="menu-btn"
-                      (click)="openEditor(entry); $event.stopPropagation()" matTooltip="Modifica">
-                      <mat-icon>edit</mat-icon>
-                    </button>
-                  }
-                  <button mat-icon-button class="menu-btn"
-                    (click)="download(entry); $event.stopPropagation()" matTooltip="Scarica">
-                    <mat-icon>download</mat-icon>
-                  </button>
-                  <button mat-icon-button class="menu-btn"
-                    (click)="openModal('rename', entry); $event.stopPropagation()" matTooltip="Rinomina">
-                    <mat-icon>drive_file_rename_outline</mat-icon>
-                  </button>
-                  <button mat-icon-button class="menu-btn danger"
-                    (click)="openModal('delete', entry); $event.stopPropagation()" matTooltip="Elimina">
-                    <mat-icon>delete</mat-icon>
-                  </button>
-                </div>
-              </div>
-            }
-          </div>
-        }
-  
-        @if (!loading() && entries().length === 0) {
-          <div class="empty-state">
-            <mat-icon>folder_open</mat-icon>
-            <span>Cartella vuota</span>
-          </div>
-        }
-  
-      </div>
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">File del server</span>
+      <h1>Cartelle</h1>
     </div>
-  </div>
-  
-  <!-- Editor popup -->
-  @if (editorOpen()) {
-    <div class="modal-overlay" (click)="closeEditor()">
-      <div class="editor-modal" (click)="$event.stopPropagation()">
-        <div class="editor-header">
-          <mat-icon>edit_document</mat-icon>
-          <span class="editor-path">{{ editorPath() }}</span>
-          <div class="editor-header-actions">
-            @if (editorSaved()) {
-              <span class="saved-badge">✓ Salvato</span>
-            }
-            <button mat-flat-button class="save-btn"
-              (click)="saveEditor()"
-              [disabled]="editorSaving() || editorLoading()">
-              @if (editorSaving()) {
-                <span>Salvataggio...</span>
-              } @else {
-                <ng-container><mat-icon>save</mat-icon> Salva</ng-container>
-              }
-            </button>
-            <button mat-icon-button (click)="closeEditor()" matTooltip="Chiudi">
-              <mat-icon>close</mat-icon>
-            </button>
-          </div>
+    <div class="actions">
+      <button class="btn" type="button" (click)="openModal('new-file')"><mat-icon>note_add</mat-icon> Nuovo file</button>
+      <button class="btn" type="button" (click)="openModal('new-dir')"><mat-icon>create_new_folder</mat-icon> Nuova cartella</button>
+      <label class="btn btn--primary" [class.disabled]="uploading()">
+        <mat-icon>upload</mat-icon> Carica
+        <input class="sr-only" type="file" multiple [disabled]="uploading()" (change)="onFilesSelected($event)" />
+      </label>
+      <button class="btn btn--icon" type="button" title="Aggiorna" aria-label="Aggiorna" [disabled]="loading()" (click)="loadDir(currentPath())">
+        <mat-icon [class.spin]="loading()">refresh</mat-icon>
+      </button>
+    </div>
+  </header>
+
+  <nav class="crumbs" aria-label="Percorso">
+    @for (crumb of breadcrumbs(); track crumb.path; let last = $last) {
+      <button type="button" class="crumb" [class.current]="last" [attr.aria-current]="last ? 'page' : null" (click)="navigateTo(crumb.path)">
+        @if ($first) { <mat-icon>home</mat-icon> }
+        {{ crumb.label }}
+      </button>
+      @if (!last) { <mat-icon class="crumbs__sep">chevron_right</mat-icon> }
+    }
+  </nav>
+
+  @if (uploading()) {
+    <div class="banner banner--warn" role="status">
+      <span class="spinner"></span>
+      <span class="grow">Caricamento file {{ uploadDone() }} di {{ uploadTotal() }}…</span>
+    </div>
+  }
+
+  <div class="workspace" [class.with-editor]="editorOpen()">
+    <section
+      class="card list"
+      [class.dragging]="dragging()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="dragging.set(false)"
+      (drop)="onDrop($event)"
+    >
+      @if (dragging()) {
+        <div class="drop"><mat-icon>cloud_upload</mat-icon> Rilascia per caricare in <strong class="mono">{{ currentPath() }}</strong></div>
+      }
+
+      <div class="row row--head" aria-hidden="true">
+        <span>Nome</span><span class="col-size">Dimensione</span><span class="col-date">Modificato</span><span></span>
+      </div>
+
+      @if (loading() && !entries().length) {
+        @for (n of [1, 2, 3, 4, 5]; track n) { <div class="skeleton line"></div> }
+      } @else if (loadFailed()) {
+        <div class="empty">
+          <div class="empty__icon"><mat-icon>folder_off</mat-icon></div>
+          <h3>Impossibile leggere la cartella</h3>
+          <p>Il server o il volume potrebbero non essere raggiungibili.</p>
+          <button class="btn" type="button" (click)="loadDir(currentPath())">Riprova</button>
         </div>
-        @if (editorLoading()) {
-          <div class="editor-loading">
-            <mat-icon>hourglass_empty</mat-icon>
-            <span>Caricamento file...</span>
+      } @else {
+        @if (!isRoot()) {
+          <button class="row row--entry" type="button" (click)="goUp()">
+            <span class="name"><mat-icon class="ic ic--dir">drive_folder_upload</mat-icon> <span class="muted">Cartella superiore</span></span>
+            <span class="col-size"></span><span class="col-date"></span><span></span>
+          </button>
+        }
+
+        @for (entry of folders().concat(files()); track entry.name) {
+          <div class="row row--entry" [class.active]="editorPath() === joinPath(currentPath(), entry.name ?? '')">
+            <button class="name" type="button" (click)="openEntry(entry)">
+              <mat-icon class="ic" [class.ic--dir]="entry.type === TypeEnum.Directory">{{ fileIcon(entry) }}</mat-icon>
+              <span class="name__text">{{ entry.name }}</span>
+            </button>
+            <span class="col-size num faint">{{ entry.type === TypeEnum.Directory ? '—' : formatBytes(entry.sizeBytes) }}</span>
+            <span class="col-date faint">{{ formatDate(entry.lastModified) }}</span>
+            <span class="row__actions">
+              @if (entry.type !== TypeEnum.Directory) {
+                <button class="btn btn--ghost btn--icon btn--sm" type="button" title="Scarica" [attr.aria-label]="'Scarica ' + entry.name" (click)="download(entry)"><mat-icon>download</mat-icon></button>
+              }
+              <button class="btn btn--ghost btn--icon btn--sm" type="button" title="Rinomina" [attr.aria-label]="'Rinomina ' + entry.name" (click)="openModal('rename', entry)"><mat-icon>edit</mat-icon></button>
+              <button class="btn btn--ghost btn--icon btn--sm del" type="button" title="Elimina" [attr.aria-label]="'Elimina ' + entry.name" (click)="openModal('delete', entry)"><mat-icon>delete_outline</mat-icon></button>
+            </span>
           </div>
+        } @empty {
+          <div class="empty">
+            <div class="empty__icon"><mat-icon>folder_open</mat-icon></div>
+            <h3>Cartella vuota</h3>
+            <p>Crea un file o una cartella, oppure trascina qui i file da caricare.</p>
+          </div>
+        }
+      }
+    </section>
+
+    @if (editorOpen()) {
+      <section class="card editor" aria-label="Editor">
+        <header class="editor__head">
+          <div class="editor__title">
+            <mat-icon>description</mat-icon>
+            <strong class="mono">{{ editorName() }}</strong>
+            @if (dirty()) { <span class="badge badge--starting">Modificato</span> }
+            @else if (editorSaved()) { <span class="badge badge--running">Salvato</span> }
+          </div>
+          <div class="editor__actions">
+            <button class="btn btn--primary btn--sm" type="button" [disabled]="!dirty() || editorSaving() || editorLoading()" (click)="saveEditor()">
+              @if (editorSaving()) { <span class="spinner"></span> } @else { <mat-icon>save</mat-icon> } Salva
+            </button>
+            <button class="btn btn--ghost btn--icon btn--sm" type="button" aria-label="Chiudi l'editor" (click)="closeEditor()"><mat-icon>close</mat-icon></button>
+          </div>
+        </header>
+        @if (editorLoading()) {
+          <div class="skeleton editor__loading"></div>
         } @else {
-          <textarea class="editor-area"
+          <textarea
+            class="editor__area mono"
+            spellcheck="false"
+            autocomplete="off"
+            wrap="off"
+            aria-label="Contenuto del file"
             [ngModel]="editorContent()"
             (ngModelChange)="editorContent.set($event)"
-            spellcheck="false"
-            placeholder="File vuoto...">
-          </textarea>
+            (keydown)="onEditorKeydown($event)"
+          ></textarea>
+        }
+        <footer class="editor__foot faint"><span class="mono">{{ editorPath() }}</span><span>Ctrl+S per salvare</span></footer>
+      </section>
+    }
+  </div>
+</div>
+
+@if (modalMode() !== 'none') {
+  <div class="modal-backdrop" (appBackdropClose)="dismissModal()" (keydown.escape)="dismissModal()">
+    <form class="modal modal--narrow" role="dialog" aria-modal="true" aria-labelledby="fm-title" (ngSubmit)="confirmModal()">
+      <div class="modal__head">
+        <h2 id="fm-title">
+          @switch (modalMode()) {
+            @case ('new-file') { Nuovo file }
+            @case ('new-dir') { Nuova cartella }
+            @case ('rename') { Rinomina }
+            @case ('delete') { Eliminare «{{ modalTarget()?.name }}»? }
+            @case ('discard') { Modifiche non salvate }
+          }
+        </h2>
+      </div>
+      <div class="modal__body">
+        @switch (modalMode()) {
+          @case ('delete') {
+            <p class="muted">
+              @if (modalTarget()?.type === TypeEnum.Directory) { La cartella e tutto il suo contenuto verranno eliminati. } @else { Il file verrà eliminato. }
+              L'operazione non si può annullare.
+            </p>
+          }
+          @case ('discard') {
+            <p class="muted">Hai modifiche non salvate in <strong class="mono">{{ editorName() }}</strong>. Se continui andranno perse.</p>
+          }
+          @default {
+            <div class="field">
+              <label for="fm-name">Nome</label>
+              <input id="fm-name" class="input mono" name="name" autocomplete="off" spellcheck="false" autofocus
+                [class.invalid]="inputError()" [ngModel]="inputValue()" (ngModelChange)="inputValue.set($event)" />
+              @if (inputError()) { <span class="field__error">{{ inputError() }}</span> }
+              @else { <span class="field__hint">In <span class="mono">{{ currentPath() }}</span></span> }
+            </div>
+          }
         }
       </div>
-    </div>
-  }
-  
-  <!-- Modal input -->
-  @if (modalMode() !== 'none' && modalMode() !== 'delete') {
-    <div class="modal-overlay" (click)="closeModal()">
-      <div class="modal" (click)="$event.stopPropagation()">
-        <div class="modal-title">
-          @if (modalMode() === 'new-file') { <mat-icon>note_add</mat-icon> Nuovo file }
-          @if (modalMode() === 'new-dir')  { <mat-icon>create_new_folder</mat-icon> Nuova cartella }
-          @if (modalMode() === 'rename')   { <mat-icon>drive_file_rename_outline</mat-icon> Rinomina }
-        </div>
-        <input class="modal-input" type="text"
-          [placeholder]="modalMode() === 'new-dir' ? 'nome-cartella' : 'nome.yml'"
-          [ngModel]="inputValue()"
-          (ngModelChange)="inputValue.set($event)"
-          (keydown.enter)="confirmModal()"
-          autofocus />
-        <div class="modal-actions">
-          <button mat-flat-button class="confirm-btn" (click)="confirmModal()">Conferma</button>
-          <button mat-stroked-button (click)="closeModal()">Annulla</button>
-        </div>
+      <div class="modal__foot">
+        <button class="btn btn--ghost" type="button" [disabled]="modalBusy()" (click)="dismissModal()">Annulla</button>
+        <button class="btn" [class.btn--primary]="modalMode() !== 'delete' && modalMode() !== 'discard'" [class.btn--solid-danger]="modalMode() === 'delete' || modalMode() === 'discard'" type="submit" [disabled]="!canConfirm()">
+          @if (modalBusy()) { <span class="spinner"></span> }
+          @switch (modalMode()) {
+            @case ('delete') { Elimina }
+            @case ('discard') { Scarta le modifiche }
+            @case ('rename') { Rinomina }
+            @default { Crea }
+          }
+        </button>
       </div>
-    </div>
-  }
-  
-  <!-- Modal delete -->
-  @if (modalMode() === 'delete') {
-    <div class="modal-overlay" (click)="closeModal()">
-      <div class="modal" (click)="$event.stopPropagation()">
-        <div class="modal-title delete-title">
-          <mat-icon>delete_forever</mat-icon> Elimina
-        </div>
-        <p class="modal-sub">
-          Eliminare <strong>{{ modalTarget()?.name }}</strong>?
-          L'operazione è irreversibile.
-        </p>
-        <div class="modal-actions">
-          <button mat-flat-button class="delete-btn" (click)="confirmModal()">Elimina</button>
-          <button mat-stroked-button (click)="closeModal()">Annulla</button>
-        </div>
-      </div>
-    </div>
-  }
+    </form>
+  </div>
+}

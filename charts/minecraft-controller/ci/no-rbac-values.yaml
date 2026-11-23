@@ -1,0 +1,7 @@
+baseDomain: example.test
+rbac:
+  create: false
+serviceAccount:
+  create: false
+  controllerName: existing-controller-sa
+  routerName: existing-router-sa

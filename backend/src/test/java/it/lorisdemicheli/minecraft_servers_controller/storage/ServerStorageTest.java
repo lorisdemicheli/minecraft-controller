@@ -218,7 +218,7 @@ class ServerStorageTest {
     Files.writeString(trash.resolve("ancient-" + old).resolve("sub/f"), "x");
     Files.createDirectories(trash.resolve("not-ours"));
 
-    assertEquals(1, storage.purgeTrash(Duration.ofHours(24)));
+    assertEquals(1, storage.purgeTrash(Duration.ofHours(24)).purged());
     assertFalse(Files.exists(trash.resolve("ancient-" + old)));
     assertTrue(Files.exists(trash.resolve("not-ours")));
     assertEquals(1, Files.list(trash).filter(p -> p.getFileName().toString().startsWith("alpha-")).count());

@@ -13,6 +13,34 @@ const app = express();
 const angularApp = new AngularNodeAppEngine();
 
 /**
+ * Settings read when the container starts, so one image serves any domain. `API_BASE_URL` is the
+ * public URL of the backend (the chart sets it); empty keeps the value compiled into the bundle.
+ */
+function runtimeConfig(): { apiBasePath: string | null } {
+  const raw = process.env['API_BASE_URL']?.trim();
+  if (!raw) return { apiBasePath: null };
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return { apiBasePath: url.href.replace(/\/$/, '') };
+    }
+  } catch {
+    // reported below
+  }
+  console.error('API_BASE_URL ignored: it must be an http(s) URL');
+  return { apiBasePath: null };
+}
+
+const config = runtimeConfig();
+
+app.get('/config.js', (_req, res) => {
+  res
+    .type('application/javascript')
+    .set('Cache-Control', 'no-store')
+    .send(`window.__APP_CONFIG__ = ${JSON.stringify(config)};`);
+});
+
+/**
  * Example Express Rest API endpoints can be defined here.
  * Uncomment and define endpoints as necessary.
  *

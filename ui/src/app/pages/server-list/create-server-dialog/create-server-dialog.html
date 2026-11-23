@@ -1,0 +1,210 @@
+<div class="modal-backdrop" (appBackdropClose)="close()">
+  <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="create-title">
+    <div class="modal__head">
+      <div>
+        <span class="eyebrow">Passo {{ step() }} di {{ steps.length }}</span>
+        <h2 id="create-title">Nuovo server</h2>
+      </div>
+      <button class="btn btn--ghost btn--icon" type="button" aria-label="Chiudi" [disabled]="creating()" (click)="close()">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <ol class="steps" aria-label="Avanzamento">
+      @for (label of steps; track label; let i = $index) {
+        <li [class.done]="step() > i + 1" [class.current]="step() === i + 1" [attr.aria-current]="step() === i + 1 ? 'step' : null">
+          <span class="steps__n">
+            @if (step() > i + 1) { <mat-icon>check</mat-icon> } @else { {{ i + 1 }} }
+          </span>
+          <span class="steps__label">{{ label }}</span>
+        </li>
+      }
+    </ol>
+
+    <div class="modal__body">
+      @switch (step()) {
+        @case (1) {
+          <div class="stack">
+            <div class="field">
+              <label for="srv-name">Nome</label>
+              <input
+                id="srv-name"
+                class="input mono"
+                [class.invalid]="nameTouched() && nameError()"
+                placeholder="survival-1"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                [ngModel]="name()"
+                (ngModelChange)="name.set($event); nameTouched.set(true)"
+              />
+              @if (nameTouched() && nameError()) {
+                <span class="field__error">{{ nameError() }}</span>
+              } @else {
+                <span class="field__hint">Minuscole, numeri e trattini. Diventa anche l'hostname del server.</span>
+              }
+            </div>
+
+            <fieldset class="field types">
+              <legend class="field__label">Tipo</legend>
+              <div class="types__grid">
+                @for (t of types; track t.value) {
+                  <button
+                    type="button"
+                    class="type"
+                    [class.active]="type() === t.value"
+                    [disabled]="t.value === TypeEnum.Curseforge && !curseforgeEnabled()"
+                    [attr.aria-pressed]="type() === t.value"
+                    (click)="selectType(t.value)"
+                  >
+                    <mat-icon>{{ t.icon }}</mat-icon>
+                    <strong>{{ t.label }}</strong>
+                    <small>
+                      @if (t.value === TypeEnum.Curseforge && !curseforgeEnabled()) { Non configurato } @else { {{ t.description }} }
+                    </small>
+                  </button>
+                }
+              </div>
+            </fieldset>
+
+            <label class="check">
+              <input type="checkbox" [ngModel]="eula()" (ngModelChange)="eula.set($event)" />
+              <span>
+                Accetto l'<a class="link" href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">EULA di Minecraft</a>
+                <small class="faint"> — necessario per avviare il server.</small>
+              </span>
+            </label>
+          </div>
+        }
+
+        @case (2) {
+          <div class="stack">
+            <div class="slider">
+              <div class="slider__head">
+                <label for="cpu">CPU</label>
+                <output class="mono">{{ formatCpu(cpu()) }} <small class="faint">({{ cpu() }}m)</small></output>
+              </div>
+              <input id="cpu" class="range" type="range" [min]="CPU.min" [max]="CPU.max" [step]="CPU.step"
+                [style.--fill]="fill(cpu(), CPU)" [ngModel]="cpu()" (ngModelChange)="cpu.set(+$event)" />
+              <div class="slider__scale"><span>{{ formatCpu(CPU.min) }}</span><span>{{ formatCpu(CPU.max) }}</span></div>
+            </div>
+
+            <div class="slider">
+              <div class="slider__head">
+                <label for="mem">Memoria</label>
+                <output class="mono">{{ formatMemory(memory()) }}</output>
+              </div>
+              <input id="mem" class="range" type="range" [min]="MEMORY.min" [max]="MEMORY.max" [step]="MEMORY.step"
+                [style.--fill]="fill(memory(), MEMORY)" [ngModel]="memory()" (ngModelChange)="memory.set(+$event)" />
+              <div class="slider__scale"><span>{{ formatMemory(MEMORY.min) }}</span><span>{{ formatMemory(MEMORY.max) }}</span></div>
+            </div>
+
+            @if (resourceError()) { <span class="field__error">{{ resourceError() }}</span> }
+            <p class="hint">Sono i limiti del pod su Kubernetes. Per un server vanilla con pochi giocatori bastano 1 GB e 0,4 vCPU.</p>
+          </div>
+        }
+
+        @case (3) {
+          <div class="stack">
+            @switch (type()) {
+              @case (TypeEnum.Modrinth) {
+                <form class="search" (ngSubmit)="searchModrinth()">
+                  <div class="input-icon grow">
+                    <mat-icon>search</mat-icon>
+                    <input class="input" name="mq" placeholder="Cerca un modpack su Modrinth" aria-label="Cerca su Modrinth"
+                      [ngModel]="modrinthQuery()" (ngModelChange)="modrinthQuery.set($event)" />
+                  </div>
+                  <button class="btn btn--primary" type="submit" [disabled]="modrinthLoading() || !modrinthQuery().trim()">Cerca</button>
+                </form>
+                @if (modrinthError()) { <span class="field__error">{{ modrinthError() }}</span> }
+                @if (modrinthLoading()) { <div class="skeleton" style="height: 220px"></div> }
+                <ul class="results">
+                  @for (hit of modrinthResults(); track hit.project_id) {
+                    <li>
+                      <button type="button" class="hit" [class.active]="modrinthSelected()?.project_id === hit.project_id" (click)="modrinthSelected.set(hit)">
+                        @if (hit.icon_url) { <img [src]="hit.icon_url" alt="" width="44" height="44" loading="lazy" /> } @else { <span class="hit__ph"><mat-icon>hub</mat-icon></span> }
+                        <span class="hit__text"><strong>{{ hit.title }}</strong><small>{{ hit.description }}</small></span>
+                        <span class="badge">{{ compact(hit.downloads) }} <mat-icon>download</mat-icon></span>
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+              @case (TypeEnum.Curseforge) {
+                <form class="search" (ngSubmit)="searchCurseforge()">
+                  <div class="input-icon grow">
+                    <mat-icon>search</mat-icon>
+                    <input class="input" name="cq" placeholder="Cerca un modpack su CurseForge" aria-label="Cerca su CurseForge"
+                      [ngModel]="curseforgeQuery()" (ngModelChange)="curseforgeQuery.set($event)" />
+                  </div>
+                  <button class="btn btn--primary" type="submit" [disabled]="curseforgeLoading() || !curseforgeQuery().trim()">Cerca</button>
+                </form>
+                @if (curseforgeError()) { <span class="field__error">{{ curseforgeError() }}</span> }
+                @if (curseforgeLoading()) { <div class="skeleton" style="height: 220px"></div> }
+                <ul class="results">
+                  @for (hit of curseforgeResults(); track hit.id) {
+                    <li>
+                      <button type="button" class="hit" [class.active]="curseforgeSelected()?.id === hit.id" (click)="curseforgeSelected.set(hit)">
+                        @if (hit.logoUrl) { <img [src]="hit.logoUrl" alt="" width="44" height="44" loading="lazy" /> } @else { <span class="hit__ph"><mat-icon>bolt</mat-icon></span> }
+                        <span class="hit__text"><strong>{{ hit.name }}</strong><small>{{ hit.summary }}</small></span>
+                        <span class="badge">{{ compact(hit.downloadCount) }} <mat-icon>download</mat-icon></span>
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+              @default {
+                <div class="field">
+                  <label for="srv-version">Versione di Minecraft</label>
+                  <input id="srv-version" class="input mono" placeholder="1.21.4" autocomplete="off" spellcheck="false"
+                    [ngModel]="version()" (ngModelChange)="version.set($event)" />
+                  @if (version() && stepThreeError()) { <span class="field__error">{{ stepThreeError() }}</span> }
+                  @else { <span class="field__hint">Per esempio 1.21.4 o 1.20.1.</span> }
+                </div>
+              }
+            }
+          </div>
+        }
+
+        @case (4) {
+          <div class="stack">
+            <div class="recap">
+              <div class="recap__head">
+                @if (sourceIcon()) { <img [src]="sourceIcon()" alt="" width="52" height="52" /> }
+                @else { <span class="hit__ph big"><mat-icon>{{ typeOption().icon }}</mat-icon></span> }
+                <div>
+                  <h3 class="mono">{{ name().trim() }}</h3>
+                  <span class="badge badge--info">{{ typeOption().label }}</span>
+                </div>
+              </div>
+              <dl>
+                <div><dt>Sorgente</dt><dd>{{ sourceSummary() }}</dd></div>
+                <div><dt>CPU</dt><dd>{{ formatCpu(cpu()) }}</dd></div>
+                <div><dt>Memoria</dt><dd>{{ formatMemory(memory()) }}</dd></div>
+                <div><dt>EULA</dt><dd>Accettato</dd></div>
+              </dl>
+            </div>
+            @if (createError()) {
+              <div class="banner" role="alert"><mat-icon>error_outline</mat-icon><span class="grow">{{ createError() }}</span></div>
+            }
+          </div>
+        }
+      }
+    </div>
+
+    <div class="modal__foot">
+      <button class="btn btn--ghost" type="button" [disabled]="creating()" (click)="close()">Annulla</button>
+      <span class="spacer"></span>
+      @if (step() > 1) {
+        <button class="btn" type="button" [disabled]="creating()" (click)="back()"><mat-icon>arrow_back</mat-icon> Indietro</button>
+      }
+      @if (step() < steps.length) {
+        <button class="btn btn--primary" type="button" [disabled]="!canProceed()" (click)="next()">Avanti <mat-icon>arrow_forward</mat-icon></button>
+      } @else {
+        <button class="btn btn--primary" type="button" [disabled]="creating()" (click)="create()">
+          @if (creating()) { <span class="spinner"></span> Creazione… } @else { <mat-icon>rocket_launch</mat-icon> Crea server }
+        </button>
+      }
+    </div>
+  </div>
+</div>

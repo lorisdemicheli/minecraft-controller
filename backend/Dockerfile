@@ -17,7 +17,9 @@ RUN --mount=type=cache,target=/root/.m2 \
  && cp target/*.jar /app.jar
 
 # ---- runtime -----------------------------------------------------------
-FROM eclipse-temurin:21-jre-alpine
+# glibc based on purpose: on Alpine (musl >= 1.2.4) the JDK cannot use openat/fstatat and
+# SecureDirectoryStream is unavailable, which ServerStorage needs to confine file access.
+FROM eclipse-temurin:21-jre
 
 # Same UID/GID as the Minecraft server pods (itzg default) and as the chart's
 # securityContext, so files written to the shared volume have matching owners.

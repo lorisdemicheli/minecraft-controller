@@ -1,10 +1,83 @@
-<nav class="navbar">
-  <span class="brand">Server Panel</span>
-  <button mat-button (click)="logout()">
-    <mat-icon>logout</mat-icon>
-    Esci
+<header class="topbar">
+  <button class="btn btn--ghost btn--icon" type="button" aria-label="Apri il menu" (click)="menuOpen.set(true)">
+    <mat-icon>menu</mat-icon>
   </button>
-</nav>
+  <a class="brand" routerLink="/servers">
+    <app-brand-mark [size]="30" />
+    <span>Minecraft Controller</span>
+  </a>
+  <button class="btn btn--ghost btn--icon" type="button" [attr.aria-label]="theme.isDark() ? 'Tema chiaro' : 'Tema scuro'" (click)="theme.toggle()">
+    <mat-icon>{{ theme.isDark() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+  </button>
+</header>
+
+@if (menuOpen()) {
+  <div class="backdrop" (click)="menuOpen.set(false)" aria-hidden="true"></div>
+}
+
+<aside class="sidebar" [class.open]="menuOpen()" aria-label="Navigazione">
+  <a class="brand" routerLink="/servers">
+    <app-brand-mark [size]="38" />
+    <span class="brand__text">
+      <strong>Minecraft</strong>
+      <small>Controller</small>
+    </span>
+  </a>
+
+  <nav class="nav">
+    <a class="nav__item" routerLink="/servers" [routerLinkActiveOptions]="{ exact: true }" routerLinkActive="active">
+      <mat-icon>space_dashboard</mat-icon>
+      Panoramica
+      <span class="pill" [title]="store.running() + ' server online'">{{ store.running() }}/{{ store.servers().length }}</span>
+    </a>
+  </nav>
+
+  <div class="servers">
+    <div class="servers__head">
+      <span class="eyebrow">Server</span>
+      <button class="btn btn--sm btn--primary" type="button" (click)="newServer()">
+        <mat-icon>add</mat-icon> Nuovo
+      </button>
+    </div>
+
+    @if (store.servers().length > 4) {
+      <div class="input-icon">
+        <mat-icon>search</mat-icon>
+        <input class="input" type="search" placeholder="Cerca server" aria-label="Cerca server" [value]="query()" (input)="onSearch($event)" />
+      </div>
+    }
+
+    <ul class="servers__list">
+      @for (server of filtered(); track server.name) {
+        <li>
+          <a class="srv" [routerLink]="['/servers', server.name]" routerLinkActive="active">
+            <span class="dot" [class]="'dot dot--' + (server.state ?? 'STOPPED').toLowerCase()"></span>
+            <span class="srv__name">{{ server.name }}</span>
+            <span class="srv__type">{{ server.type }}</span>
+          </a>
+        </li>
+      } @empty {
+        <li class="servers__empty">
+          @if (!store.loaded()) { Caricamento… }
+          @else if (store.error()) { Elenco non disponibile }
+          @else if (query()) { Nessun risultato }
+          @else { Nessun server }
+        </li>
+      }
+    </ul>
+  </div>
+
+  <div class="foot">
+    <button class="btn btn--ghost btn--block foot__btn" type="button" (click)="theme.toggle()">
+      <mat-icon>{{ theme.isDark() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+      {{ theme.isDark() ? 'Tema chiaro' : 'Tema scuro' }}
+    </button>
+    <button class="btn btn--ghost btn--block foot__btn" type="button" (click)="logout()">
+      <mat-icon>logout</mat-icon>
+      Esci
+    </button>
+  </div>
+</aside>
 
 <main class="content">
   <router-outlet />

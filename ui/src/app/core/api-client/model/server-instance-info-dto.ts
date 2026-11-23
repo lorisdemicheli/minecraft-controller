@@ -1,5 +1,5 @@
 /**
- * API
+ * Minecraft Controller API
  *
  * 
  *
@@ -14,6 +14,10 @@ import { ServerVersionDto } from './server-version-dto';
 
 export interface ServerInstanceInfoDto { 
     state?: ServerInstanceInfoDto.StateEnum;
+    cpuUsage?: number;
+    memoryUsage?: number;
+    maxCpu?: number;
+    maxMemory?: number;
     version?: ServerVersionDto;
     population?: ServerPopulationDto;
     description?: ServerDescriptionDto;

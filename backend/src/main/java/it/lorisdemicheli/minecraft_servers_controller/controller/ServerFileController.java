@@ -26,8 +26,13 @@ import it.lorisdemicheli.minecraft_servers_controller.exception.InvalidRequestEx
 import it.lorisdemicheli.minecraft_servers_controller.storage.ServerStorage;
 import it.lorisdemicheli.minecraft_servers_controller.storage.StoredFile;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
-/** File manager of a server. Works the same whether the server is running or stopped. */
+/**
+ * File manager of a server. Works the same whether the server is running or stopped. Changes are
+ * logged (paths only, never contents).
+ */
+@Slf4j
 @RestController
 @Tag(name = "FILE SYSTEM")
 @RequiredArgsConstructor
@@ -71,8 +76,9 @@ public class ServerFileController {
   public ResponseEntity<Void> uploadFile(@PathVariable String serverName,
       @RequestParam MultipartFile file, @RequestParam String destPath) throws IOException {
     try (InputStream in = file.getInputStream()) {
-      storage.upload(serverName, destPath, file.getOriginalFilename(), in);
+      storage.upload(serverName, destPath, file.getOriginalFilename(), in, file.getSize());
     }
+    log.info("File uploaded: server={} path={} bytes={}", serverName, destPath, file.getSize());
     return ResponseEntity.noContent().build();
   }
 
@@ -94,6 +100,7 @@ public class ServerFileController {
   public ResponseEntity<Void> deletePath(@PathVariable String serverName,
       @RequestParam String path) {
     storage.delete(serverName, path);
+    log.info("File deleted: server={} path={}", serverName, path);
     return ResponseEntity.noContent().build();
   }
 
@@ -107,6 +114,8 @@ public class ServerFileController {
   public ResponseEntity<Void> setContent(@PathVariable String serverName,
       @RequestParam String path, @RequestBody String content) {
     storage.writeText(serverName, path, content);
+    log.info("File saved: server={} path={} chars={}", serverName, path,
+        content == null ? 0 : content.length());
     return ResponseEntity.noContent().build();
   }
 
@@ -114,6 +123,7 @@ public class ServerFileController {
   public ResponseEntity<Void> rename(@PathVariable String serverName, @RequestParam String path,
       @RequestParam String newName) {
     storage.rename(serverName, path, newName);
+    log.info("File renamed: server={} path={} newName={}", serverName, path, newName);
     return ResponseEntity.noContent().build();
   }
 
@@ -121,13 +131,18 @@ public class ServerFileController {
   public ResponseEntity<Void> copy(@PathVariable String serverName,
       @RequestParam String sourcePath, @RequestParam String destPath) {
     storage.copy(serverName, sourcePath, destPath);
+    log.info("File copied: server={} from={} to={}", serverName, sourcePath, destPath);
     return ResponseEntity.noContent().build();
   }
 
-  /** Disk used by this server and free/total space of the shared volume. */
+  /**
+   * Disk used by this server and free/total space of the shared volume. {@code partial=true}
+   * means some entries could not be read and {@code usedBytes} is only a lower bound.
+   */
   @GetMapping(value = "/usage", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<DiskUsageDto> usage(@PathVariable String serverName) {
-    return ResponseEntity.ok(new DiskUsageDto(storage.usedBytes(serverName), storage.freeBytes(),
-        storage.totalBytes()));
+    ServerStorage.DiskUsage usage = storage.usage(serverName);
+    return ResponseEntity.ok(new DiskUsageDto(usage.bytes(), storage.freeBytes(),
+        storage.totalBytes(), !usage.complete(), usage.unreadableEntries()));
   }
 }

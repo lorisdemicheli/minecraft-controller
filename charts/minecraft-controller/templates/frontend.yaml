@@ -17,7 +17,20 @@ spec:
     metadata:
       labels:
         {{- include "minecraft-controller.selectorLabels" $sel | nindent 8 }}
+        {{- with .Values.frontend.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.frontend.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -29,9 +42,19 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.frontend.port }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: PORT
               value: {{ .Values.frontend.port | quote }}
+            # read by the console when it starts: the same image works on any domain
+            - name: API_BASE_URL
+              value: {{ include "minecraft-controller.apiUrl" . | quote }}
+            # hostnames the server-side rendering answers to (anything else gets a 400)
+            - name: NG_ALLOWED_HOSTS
+              value: {{ join "," (concat (list (include "minecraft-controller.consoleHost" .) "localhost") .Values.frontend.allowedHosts) | quote }}
             {{- with .Values.frontend.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

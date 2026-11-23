@@ -1,0 +1,62 @@
+# Example values for a real installation. It contains no secret: create the Secret first
+# (see README.md, "Credentials") and copy this file outside of version control if you add any.
+#
+#   kubectl create namespace minecraft
+#   kubectl -n minecraft create secret generic minecraft-controller-auth \
+#     --from-literal=password="$(openssl rand -base64 18)" \
+#     --from-literal=jwt-secret="$(openssl rand -base64 48)"
+#   helm upgrade --install minecraft-controller ./charts/minecraft-controller \
+#     --namespace minecraft --create-namespace -f values-example.yaml
+
+baseDomain: mc.example.com
+
+auth:
+  username: admin
+  existingSecret: minecraft-controller-auth
+
+controller:
+  image:
+    repository: ghcr.io/lorisdemicheli/minecraft-controller
+    # an immutable tag published by the CI (sha-<full commit sha>)
+    tag: main
+    pullPolicy: Always
+  logFormat: json
+
+storage:
+  size: 100Gi
+  className: longhorn          # any RWX class; empty = cluster default
+  accessMode: ReadWriteMany
+  trashRetentionHours: 48
+  minFreeGb: 5
+
+servers:
+  resources:
+    # schedule on 50% of the chosen CPU and let servers burst on idle CPU
+    cpuRequestPercent: 50
+    cpuLimitEnabled: false
+
+router:
+  image:
+    tag: latest                # pin a release of itzg/mc-router in production
+  autoScale:
+    up: true                   # start a stopped server when a player connects
+    down: false
+  service:
+    type: LoadBalancer
+    externalTrafficPolicy: Local
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+    secretName: minecraft-controller-tls
+
+backup:
+  enabled: true
+  schedule: "0 4 * * *"
+  retentionDays: 7
+  storage:
+    size: 200Gi

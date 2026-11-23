@@ -1,5 +1,5 @@
 /**
- * API
+ * Minecraft Controller API
  *
  * 
  *
@@ -424,9 +424,9 @@ export class CONSOLEService extends BaseService {
      * @param reportProgress flag to report request and response progress.
      * @param options additional options
      */
-    public streamLogs(serverName: string, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<Array<string>>;
-    public streamLogs(serverName: string, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<string>>>;
-    public streamLogs(serverName: string, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<string>>>;
+    public streamLogs(serverName: string, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<Array<any>>;
+    public streamLogs(serverName: string, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<any>>>;
+    public streamLogs(serverName: string, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<any>>>;
     public streamLogs(serverName: string, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'text/event-stream', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         if (serverName === null || serverName === undefined) {
             throw new Error('Required parameter serverName was null or undefined when calling streamLogs.');
@@ -462,7 +462,7 @@ export class CONSOLEService extends BaseService {
 
         let localVarPath = `/servers/${this.configuration.encodeParam({name: "serverName", value: serverName, in: "path", style: "simple", explode: false, dataType: "string", dataFormat: undefined})}/console/logs`;
         const { basePath, withCredentials } = this.configuration;
-        return this.httpClient.request<Array<string>>('get', `${basePath}${localVarPath}`,
+        return this.httpClient.request<Array<any>>('get', `${basePath}${localVarPath}`,
             {
                 context: localVarHttpContext,
                 responseType: <any>responseType_,

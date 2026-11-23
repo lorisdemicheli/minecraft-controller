@@ -1,0 +1,6 @@
+baseDomain: example.test
+frontend:
+  enabled: true
+  image:
+    repository: registry.example.test/minecraft-console
+    tag: "1.0.0"

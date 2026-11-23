@@ -1,8 +1,11 @@
+{{- include "minecraft-controller.validate" . -}}
 {{- $fullname := include "minecraft-controller.fullname" . -}}
 {{- $secret := include "minecraft-controller.secretName" . -}}
 {{- $claim := include "minecraft-controller.claimName" . -}}
 {{- $scheme := ternary "https" "http" .Values.ingress.tls.enabled -}}
 {{- $sel := dict "ctx" . "component" "controller" -}}
+{{- $c := .Values.controller -}}
+{{- $origins := $c.corsAllowedOrigins | default (list (printf "%s://%s" $scheme (include "minecraft-controller.consoleHost" .))) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,7 +14,10 @@ metadata:
     {{- include "minecraft-controller.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 spec:
-  replicas: {{ .Values.controller.replicas }}
+  replicas: 1
+  # Never two controllers at once (in-process locks, ReadWriteOnce volumes).
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "minecraft-controller.selectorLabels" $sel | nindent 6 }}
@@ -19,12 +25,29 @@ spec:
     metadata:
       labels:
         {{- include "minecraft-controller.selectorLabels" $sel | nindent 8 }}
+        {{- with $c.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # restart when the generated credentials change
+        checksum/auth: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum | trunc 16 }}
+        {{- if $c.metrics.scrapeAnnotations }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $c.managementPort | quote }}
+        prometheus.io/path: /actuator/prometheus
+        {{- end }}
+        {{- with $c.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
-      serviceAccountName: {{ $fullname }}-controller
+      serviceAccountName: {{ include "minecraft-controller.controllerServiceAccount" . }}
+      {{- with $c.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- /* fsGroupChangePolicy OnRootMismatch: no recursive chown of the whole volume on every start */}}
+      {{- $podSecurity := dict "runAsNonRoot" true "runAsUser" (int .Values.storage.uid) "runAsGroup" (int .Values.storage.gid) "fsGroup" (int .Values.storage.gid) "fsGroupChangePolicy" "OnRootMismatch" "seccompProfile" (dict "type" "RuntimeDefault") }}
       securityContext:
-        runAsUser: {{ .Values.storage.uid }}
-        runAsGroup: {{ .Values.storage.gid }}
-        fsGroup: {{ .Values.storage.gid }}
+        {{- toYaml (mergeOverwrite $podSecurity (deepCopy ($c.podSecurityContext | default dict))) | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -39,27 +62,64 @@ spec:
             - chown {{ .Values.storage.uid }}:{{ .Values.storage.gid }} /data && chmod 775 /data || echo "WARN could not chown /data, continuing"
           securityContext:
             runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER"]
           volumeMounts:
             - name: data
               mountPath: /data
       {{- end }}
       containers:
         - name: controller
-          image: {{ include "minecraft-controller.image" .Values.controller.image | quote }}
-          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          image: {{ include "minecraft-controller.image" $c.image | quote }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.controller.port }}
+              containerPort: {{ $c.port }}
+            - name: management
+              containerPort: {{ $c.managementPort }}
           env:
-            # Spring Boot relaxed binding of it.lorisdemicheli.minecraft-servers.*
+            - name: JAVA_OPTS
+              value: {{ $c.javaOpts | quote }}
             - name: SERVER_PORT
-              value: {{ .Values.controller.port | quote }}
+              value: {{ $c.port | quote }}
+            - name: MANAGEMENT_SERVER_PORT
+              value: {{ $c.managementPort | quote }}
+            {{- if eq $c.logFormat "json" }}
+            - name: LOGGING_STRUCTURED_FORMAT_CONSOLE
+              value: ecs
+            {{- end }}
+            - name: SPRING_SERVLET_MULTIPART_LOCATION
+              value: /tmp
+            - name: SPRING_SERVLET_MULTIPART_MAXFILESIZE
+              value: {{ $c.maxUploadSize | quote }}
+            - name: SPRING_SERVLET_MULTIPART_MAXREQUESTSIZE
+              value: {{ $c.maxUploadSize | quote }}
+            # Spring Boot relaxed binding of it.lorisdemicheli.minecraft-servers.*
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_NAMESPACE
               value: {{ include "minecraft-controller.serversNamespace" . | quote }}
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_BASEDOMAIN
               value: {{ include "minecraft-controller.baseDomain" . | quote }}
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_CORSALLOWEDORIGINS
-              value: "{{ $scheme }}://console.{{ include "minecraft-controller.baseDomain" . }}"
+              value: {{ join "," $origins | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SERVERIMAGE
+              value: {{ .Values.servers.image | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_TERMINATIONGRACEPERIODSECONDS
+              value: {{ .Values.servers.terminationGracePeriodSeconds | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SERVERRESOURCES_CPUREQUESTPERCENT
+              value: {{ .Values.servers.resources.cpuRequestPercent | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SERVERRESOURCES_CPULIMITENABLED
+              value: {{ .Values.servers.resources.cpuLimitEnabled | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SERVERRESOURCES_MEMORYREQUESTPERCENT
+              value: {{ .Values.servers.resources.memoryRequestPercent | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SERVERRESOURCES_MEMORYOVERHEADPERCENT
+              value: {{ .Values.servers.resources.memoryOverheadPercent | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SERVERRESOURCES_MEMORYOVERHEADMINMB
+              value: {{ .Values.servers.resources.memoryOverheadMinMb | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SERVERSECURITY_RUNASNONROOT
+              value: {{ .Values.servers.runAsNonRoot | quote }}
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_STORAGE_DATADIR
               value: /data
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_STORAGE_CLAIMNAME
@@ -76,6 +136,10 @@ spec:
               value: {{ .Values.auth.username | quote }}
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_JWTEXPIRATIONMS
               value: {{ .Values.auth.jwtExpirationMs | int64 | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_LOGINMAXATTEMPTS
+              value: {{ .Values.auth.loginMaxAttempts | quote }}
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_LOGINWINDOW
+              value: {{ .Values.auth.loginWindow | quote }}
             - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_SECURITY_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -92,26 +156,42 @@ spec:
                   name: {{ $secret }}
                   key: curseforge-api-key
                   optional: true
-            {{- with .Values.controller.extraEnv }}
+            # server pods read the key from the same Secret: never in clear in a StatefulSet
+            - name: IT_LORISDEMICHELI_MINECRAFTSERVERS_CURSEFORGEAPIKEYSECRET_NAME
+              value: {{ $secret | quote }}
+            {{- with $c.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- $security := dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" true "capabilities" (dict "drop" (list "ALL")) }}
+          securityContext:
+            {{- toYaml (mergeOverwrite $security (deepCopy ($c.securityContext | default dict))) | nindent 12 }}
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          # Liveness only checks the process itself: a Kubernetes API outage never restarts it.
           startupProbe:
-            tcpSocket:
-              port: http
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
             periodSeconds: 5
             failureThreshold: 36
           livenessProbe:
-            tcpSocket:
-              port: http
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
-            tcpSocket:
-              port: http
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
             periodSeconds: 10
-          {{- with .Values.controller.resources }}
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- with $c.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -119,16 +199,23 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ $claim }}
-      {{- with .Values.controller.nodeSelector }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $c.tmpSizeLimit }}
+      {{- with $c.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.controller.affinity }}
+      {{- with $c.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.controller.tolerations }}
+      {{- with $c.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.topologySpreadConstraints }}
+      topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 ---
@@ -144,5 +231,9 @@ spec:
     {{- include "minecraft-controller.selectorLabels" $sel | nindent 4 }}
   ports:
     - name: http
-      port: {{ .Values.controller.port }}
+      port: {{ $c.port }}
       targetPort: http
+    # health and metrics, cluster-internal only (the Ingress routes the http port)
+    - name: management
+      port: {{ $c.managementPort }}
+      targetPort: management

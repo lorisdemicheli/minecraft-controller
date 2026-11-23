@@ -65,3 +65,42 @@ app.kubernetes.io/component: {{ .component }}
 {{- define "minecraft-controller.image" -}}
 {{- printf "%s:%s" .repository (toString .tag) -}}
 {{- end -}}
+
+{{/* ServiceAccount names */}}
+{{- define "minecraft-controller.controllerServiceAccount" -}}
+{{- default (printf "%s-controller" (include "minecraft-controller.fullname" .)) .Values.serviceAccount.controllerName -}}
+{{- end -}}
+
+{{- define "minecraft-controller.routerServiceAccount" -}}
+{{- default (printf "%s-router" (include "minecraft-controller.fullname" .)) .Values.serviceAccount.routerName -}}
+{{- end -}}
+
+{{/* Hosts */}}
+{{- define "minecraft-controller.apiHost" -}}
+{{- default (printf "api.%s" (include "minecraft-controller.baseDomain" .)) .Values.ingress.api.host -}}
+{{- end -}}
+
+{{/* URL of the API as the browser reaches it: what the console is told to call */}}
+{{- define "minecraft-controller.apiUrl" -}}
+{{- default (printf "%s://%s" (ternary "https" "http" .Values.ingress.tls.enabled) (include "minecraft-controller.apiHost" .)) .Values.frontend.apiBaseUrl -}}
+{{- end -}}
+
+{{- define "minecraft-controller.consoleHost" -}}
+{{- default (printf "console.%s" (include "minecraft-controller.baseDomain" .)) .Values.ingress.console.host -}}
+{{- end -}}
+
+{{/* Fails early on values that would deploy something broken or unsafe */}}
+{{- define "minecraft-controller.validate" -}}
+{{- if ne (int .Values.controller.replicas) 1 -}}
+{{- fail "controller.replicas must be 1: create/delete operations are coordinated inside the controller process" -}}
+{{- end -}}
+{{- if and (not .Values.auth.existingSecret) .Values.auth.jwtSecret (lt (len .Values.auth.jwtSecret) 32) -}}
+{{- fail "auth.jwtSecret must be at least 32 characters" -}}
+{{- end -}}
+{{- if and .Values.frontend.enabled (not .Values.frontend.image.repository) -}}
+{{- fail "frontend.enabled=true needs frontend.image.repository" -}}
+{{- end -}}
+{{- if not (has .Values.controller.logFormat (list "text" "json")) -}}
+{{- fail "controller.logFormat must be text or json" -}}
+{{- end -}}
+{{- end -}}
