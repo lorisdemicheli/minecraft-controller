@@ -28,6 +28,11 @@ ADMIN CREDENTIALS
 -----------------
 Username: {{ .Values.auth.username }}
 Password: kubectl get secret {{ include "minecraft-controller.secretName" . }} -n {{ .Release.Namespace }} -o jsonpath='{.data.password}' | base64 -d; echo
+{{- if and (not .Values.auth.existingSecret) (eq (toString .Values.auth.password) "admin") }}
+
+WARNING: the admin password is the default ("admin"). Change it before exposing the panel:
+  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} --reuse-values --set-string auth.password=<new>
+{{- end }}
 
 DNS SETUP
 ---------

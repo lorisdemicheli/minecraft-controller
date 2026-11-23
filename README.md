@@ -35,7 +35,7 @@ helm upgrade --install minecraft-controller oci://ghcr.io/<owner>/charts/minecra
 
 Configurazione completa, DNS, TLS, storage, backup e troubleshooting: [charts/minecraft-controller/README.md](charts/minecraft-controller/README.md). Esempio di values: [values-example.yaml](charts/minecraft-controller/values-example.yaml).
 
-Script di comodo: `./install.sh` (helm upgrade --install, crea namespace e pull secret) e `./build.sh` (build e push delle immagini locali: backend e console).
+Script di comodo: `./install.sh` (helm upgrade --install, crea namespace e pull secret; la password di `admin` è `admin` di default, `ADMIN_PASSWORD=...` la cambia) e `./build.sh` (build e push delle immagini locali: backend e console).
 
 ## Sviluppo
 

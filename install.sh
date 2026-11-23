@@ -4,6 +4,7 @@
 #
 #   ./install.sh                                    # BASE_DOMAIN defaults to mc.lorisdemicheli.it
 #   BASE_DOMAIN=mc.example.com ./install.sh
+#   ADMIN_PASSWORD=<password> ./install.sh          # admin password (chart default: admin, change it before exposing the panel)
 #   VALUES=my-values.yaml ./install.sh              # values file (kept out of git)
 #   TAG=sha-<commit> ./install.sh                   # a specific build of the CI (controller + console)
 #   CHART=oci://ghcr.io/<owner>/charts/minecraft-controller CHART_VERSION=0.5.0 ./install.sh
@@ -24,6 +25,7 @@ CHART="${CHART:-charts/minecraft-controller}"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
 args=(--namespace "$NS" --set "baseDomain=$BASE_DOMAIN")
+[ -n "${ADMIN_PASSWORD:-}" ] && args+=(--set-string "auth.password=$ADMIN_PASSWORD")
 [ -n "${VALUES:-}" ] && args+=(-f "$VALUES")
 [ -n "${TAG:-}" ] && args+=(--set "controller.image.tag=$TAG" --set "frontend.image.tag=$TAG")
 [ -n "${CHART_VERSION:-}" ] && args+=(--version "$CHART_VERSION")
@@ -43,6 +45,7 @@ helm upgrade --install "$RELEASE" "$CHART" "${args[@]}" "$@"
 echo
 echo "Console:   http://console.$BASE_DOMAIN   (API: http://api.$BASE_DOMAIN; https with ingress.tls.enabled)"
 echo "Pods:      kubectl get pods -n $NS"
+echo "Login:     user admin, password = ADMIN_PASSWORD (chart default: admin)"
 echo "Password:  kubectl get secret $RELEASE-minecraft-controller-auth -n $NS -o jsonpath='{.data.password}' | base64 -d; echo"
 echo "API test:  kubectl port-forward svc/$RELEASE-minecraft-controller-controller 8080:8080 -n $NS"
 echo "Check:     helm test $RELEASE -n $NS"

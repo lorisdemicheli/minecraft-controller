@@ -98,8 +98,17 @@ kubectl -n minecraft delete pvc minecraft-controller-data   # IRREVERSIBILE: can
 | Modalità | Quando |
 |---|---|
 | `auth.existingSecret` | produzione, GitOps (Argo CD/Flux), `helm template` |
-| `auth.password` / `auth.jwtSecret` via `--set` o file non versionato | test |
-| niente | il chart genera password e chiave JWT alla prima installazione e le riusa agli upgrade (`lookup`; non funziona con `helm template`/GitOps) |
+| `auth.password` / `auth.jwtSecret` via `--set-string` o file non versionato | test, installazioni semplici |
+| niente (`auth.jwtSecret` vuoto) | il chart genera la chiave JWT alla prima installazione e la riusa agli upgrade (`lookup`; non funziona con `helm template`/GitOps) |
+
+**La password di default è `admin`** (`auth.password`): cambiala prima di esporre il pannello.
+
+```bash
+helm upgrade --install ... --set-string auth.password='una-password-lunga'   # la scegli tu
+helm upgrade --install ... --set-string auth.password=                       # casuale, generata una volta e riusata agli upgrade
+```
+
+Cambiare la password invalida i token già emessi: dopo l'`upgrade` rifai il login.
 
 Chiavi del Secret: `password`, `jwt-secret` (≥ 32 caratteri), `curseforge-api-key` (opzionale).
 
@@ -253,7 +262,8 @@ Build locale dell'immagine: `docker build -t minecraft-console:dev ui/`.
 | `storage.minFreeGb` | `2` | Spazio minimo per creare server e caricare file |
 | `auth.username` | `admin` | Utente admin |
 | `auth.existingSecret` | `""` | Secret con `password`, `jwt-secret`, `curseforge-api-key` |
-| `auth.password` / `auth.jwtSecret` | `""` | Credenziali esplicite (vuoto = generate) |
+| `auth.password` | `admin` | Password dell'admin (vuoto = casuale, generata una volta). Cambiala |
+| `auth.jwtSecret` | `""` | Chiave JWT (vuoto = generata) |
 | `auth.jwtExpirationMs` | `86400000` | Durata dei token (1 min – 30 giorni) |
 | `auth.curseForgeApiKey` | `""` | Chiave CurseForge (senza existingSecret) |
 | `auth.loginMaxAttempts` / `auth.loginWindow` | `10` / `5m` | Limite di login falliti per client |

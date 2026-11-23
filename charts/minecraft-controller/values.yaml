@@ -48,9 +48,10 @@ auth:
   # `curseforge-api-key`. Recommended for production and GitOps: the generated credentials
   # rely on `lookup`, which returns nothing with `helm template`, Argo CD or Flux.
   existingSecret: ""
-  # -- Admin password, only when existingSecret is empty. Empty = random, generated once.
-  # Pass it with --set or a non-versioned values file, never commit it.
-  password: ""
+  # -- Admin password, only when existingSecret is empty. The default is "admin": CHANGE IT before
+  # exposing the panel (--set-string auth.password=... or a non-versioned values file, never commit
+  # it). Empty ("") = random, generated once and kept on upgrades.
+  password: admin
   # -- JWT signing key (>= 32 chars), only when existingSecret is empty. Empty = random.
   jwtSecret: ""
   # -- JWT lifetime in milliseconds (default 24h, between 1 minute and 30 days).
